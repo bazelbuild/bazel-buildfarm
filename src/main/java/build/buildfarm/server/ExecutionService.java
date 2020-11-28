@@ -24,9 +24,12 @@ import build.bazel.remote.execution.v2.ExecutionGrpc;
 import build.bazel.remote.execution.v2.RequestMetadata;
 import build.bazel.remote.execution.v2.WaitExecutionRequest;
 import build.buildfarm.common.Watcher;
+import build.buildfarm.common.grpc.GrpcEndpoint;
+import build.buildfarm.common.grpc.GrpcEndpointHandler;
 import build.buildfarm.common.grpc.TracingMetadataUtils;
 import build.buildfarm.instance.Instance;
 import build.buildfarm.metrics.MetricsPublisher;
+import build.buildfarm.v1test.GrpcTimeout;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.longrunning.Operation;
@@ -49,34 +52,42 @@ public class ExecutionService extends ExecutionGrpc.ExecutionImplBase {
   private final TimeUnit keepaliveUnit;
   private final ScheduledExecutorService keepaliveScheduler;
   private final MetricsPublisher metricsPublisher;
+  private final GrpcTimeout executeTimeout;
+  private final GrpcTimeout waitExecuteTimeout;
 
   public ExecutionService(
       Instances instances,
+      GrpcTimeout executeTimeout,
+      GrpcTimeout waitExecuteTimeout,
       long keepaliveAfter,
       TimeUnit keepaliveUnit,
       ScheduledExecutorService keepaliveScheduler,
       MetricsPublisher metricsPublisher) {
     this.instances = instances;
+    this.executeTimeout = executeTimeout;
+    this.waitExecuteTimeout = waitExecuteTimeout;
     this.keepaliveAfter = keepaliveAfter;
     this.keepaliveUnit = keepaliveUnit;
     this.keepaliveScheduler = keepaliveScheduler;
     this.metricsPublisher = metricsPublisher;
   }
 
-  private void withCancellation(
-      ServerCallStreamObserver<Operation> serverCallStreamObserver, ListenableFuture<Void> future) {
+  private <T> void withCancellation(GrpcEndpoint<T> endpoint) {
+
+    GrpcEndpointHandler.handleTimeout(endpoint, Context.current(), keepaliveScheduler);
+
     addCallback(
-        future,
+        endpoint.operation,
         new FutureCallback<Void>() {
           boolean isCancelled() {
-            return serverCallStreamObserver.isCancelled() || Context.current().isCancelled();
+            return endpoint.streamObserver.isCancelled() || Context.current().isCancelled();
           }
 
           @Override
           public void onSuccess(Void result) {
             if (!isCancelled()) {
               try {
-                serverCallStreamObserver.onCompleted();
+                endpoint.streamObserver.onCompleted();
               } catch (Exception e) {
                 onFailure(e);
               }
@@ -87,12 +98,12 @@ public class ExecutionService extends ExecutionGrpc.ExecutionImplBase {
           public void onFailure(Throwable t) {
             if (!isCancelled() && !(t instanceof CancellationException)) {
               logger.log(Level.WARNING, "error occurred during execution", t);
-              serverCallStreamObserver.onError(Status.fromThrowable(t).asException());
+              endpoint.streamObserver.onError(Status.fromThrowable(t).asException());
             }
           }
         },
         Context.current().fixedContextExecutor(directExecutor()));
-    serverCallStreamObserver.setOnCancelHandler(() -> future.cancel(false));
+    endpoint.streamObserver.setOnCancelHandler(() -> endpoint.operation.cancel(false));
   }
 
   abstract class KeepaliveWatcher implements Watcher {
@@ -184,11 +195,20 @@ public class ExecutionService extends ExecutionGrpc.ExecutionImplBase {
 
     ServerCallStreamObserver<Operation> serverCallStreamObserver =
         (ServerCallStreamObserver<Operation>) responseObserver;
-    withCancellation(
-        serverCallStreamObserver,
+    ListenableFuture<Void> operation =
         instance.watchOperation(
             operationName,
-            createWatcher(serverCallStreamObserver, TracingMetadataUtils.fromCurrentContext())));
+            createWatcher(serverCallStreamObserver, TracingMetadataUtils.fromCurrentContext()));
+
+    // configure information about the endpoint and whether we will enforce a global timeout
+    GrpcEndpoint<Operation> endpoint = new GrpcEndpoint<Operation>();
+    endpoint.streamObserver = serverCallStreamObserver;
+    endpoint.operation = operation;
+    endpoint.name = "wait execution";
+    endpoint.enforceDeadline = waitExecuteTimeout.getEnforce();
+    endpoint.duration = waitExecuteTimeout.getTimeout();
+
+    withCancellation(endpoint);
   }
 
   @Override
@@ -205,15 +225,24 @@ public class ExecutionService extends ExecutionGrpc.ExecutionImplBase {
         (ServerCallStreamObserver<Operation>) responseObserver;
     try {
       RequestMetadata requestMetadata = TracingMetadataUtils.fromCurrentContext();
-      withCancellation(
-          serverCallStreamObserver,
+      ListenableFuture<Void> operation =
           instance.execute(
               request.getActionDigest(),
               request.getSkipCacheLookup(),
               request.getExecutionPolicy(),
               request.getResultsCachePolicy(),
               requestMetadata,
-              createWatcher(serverCallStreamObserver, requestMetadata)));
+              createWatcher(serverCallStreamObserver, requestMetadata));
+
+      // configure information about the endpoint and whether we will enforce a global timeout
+      GrpcEndpoint<Operation> endpoint = new GrpcEndpoint<Operation>();
+      endpoint.streamObserver = serverCallStreamObserver;
+      endpoint.operation = operation;
+      endpoint.name = "execute";
+      endpoint.enforceDeadline = executeTimeout.getEnforce();
+      endpoint.duration = executeTimeout.getTimeout();
+
+      withCancellation(endpoint);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
