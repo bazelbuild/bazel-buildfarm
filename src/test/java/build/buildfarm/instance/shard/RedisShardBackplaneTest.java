@@ -16,6 +16,7 @@ package build.buildfarm.instance.shard;
 
 import static build.buildfarm.instance.shard.RedisShardBackplane.parseOperationChange;
 import static com.google.common.truth.Truth.assertThat;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -41,6 +42,8 @@ import org.junit.runners.JUnit4;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.redisson.api.RMapCache;
+import org.redisson.api.RedissonClient;
 import redis.clients.jedis.JedisCluster;
 
 @RunWith(JUnit4.class)
@@ -48,6 +51,7 @@ public class RedisShardBackplaneTest {
   private RedisShardBackplane backplane;
 
   @Mock Supplier<JedisCluster> mockJedisClusterFactory;
+  @Mock RedissonClient mockRedissonClient;
 
   @Before
   public void setUp() {
@@ -72,7 +76,8 @@ public class RedisShardBackplaneTest {
             "invalid-protobuf-worker-removed-test",
             (o) -> o,
             (o) -> o,
-            mockJedisClusterFactory);
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     assertThat(backplane.getWorkers()).isEmpty();
@@ -108,7 +113,12 @@ public class RedisShardBackplaneTest {
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
     backplane =
         new RedisShardBackplane(
-            config, "prequeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+            config,
+            "prequeue-operation-test",
+            (o) -> o,
+            (o) -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -137,7 +147,12 @@ public class RedisShardBackplaneTest {
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
     backplane =
         new RedisShardBackplane(
-            config, "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+            config,
+            "requeue-operation-test",
+            (o) -> o,
+            (o) -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -159,7 +174,12 @@ public class RedisShardBackplaneTest {
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
     backplane =
         new RedisShardBackplane(
-            config, "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+            config,
+            "requeue-operation-test",
+            (o) -> o,
+            (o) -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -188,7 +208,12 @@ public class RedisShardBackplaneTest {
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
     backplane =
         new RedisShardBackplane(
-            config, "complete-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+            config,
+            "complete-operation-test",
+            (o) -> o,
+            (o) -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -212,7 +237,12 @@ public class RedisShardBackplaneTest {
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
     backplane =
         new RedisShardBackplane(
-            config, "delete-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+            config,
+            "delete-operation-test",
+            (o) -> o,
+            (o) -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -232,13 +262,26 @@ public class RedisShardBackplaneTest {
             .setInvocationBlacklistPrefix("InvocationBlacklist")
             .build();
     UUID toolInvocationId = UUID.randomUUID();
+
+    // mock redisson
+    RMapCache<Object, Object> cacheMapMock = mock(RMapCache.class);
+    when(mockRedissonClient.getMapCache(any(String.class))).thenReturn(cacheMapMock);
+    when(cacheMapMock.get(any(String.class))).thenReturn("found");
+
+    // mock jedis
     JedisCluster jedisCluster = mock(JedisCluster.class);
-    String invocationBlacklistKey = config.getInvocationBlacklistPrefix() + ":" + toolInvocationId;
+    String invocationBlacklistKey = toolInvocationId.toString();
     when(jedisCluster.exists(invocationBlacklistKey)).thenReturn(true);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
+
     backplane =
         new RedisShardBackplane(
-            config, "invocation-blacklist-test", o -> o, o -> o, mockJedisClusterFactory);
+            config,
+            "invocation-blacklist-test",
+            o -> o,
+            o -> o,
+            mockJedisClusterFactory,
+            mockRedissonClient);
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -250,7 +293,7 @@ public class RedisShardBackplaneTest {
                     .build()))
         .isTrue();
 
-    verify(mockJedisClusterFactory, times(1)).get();
-    verify(jedisCluster, times(1)).exists(invocationBlacklistKey);
+    verify(mockRedissonClient, times(1)).getMapCache("InvocationBlacklist");
+    verify(cacheMapMock, times(1)).get(invocationBlacklistKey);
   }
 }
