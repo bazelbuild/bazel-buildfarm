@@ -37,7 +37,6 @@ import static java.util.concurrent.Executors.newFixedThreadPool;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.logging.Level.INFO;
 import static net.javacrumbs.futureconverter.java8guava.FutureConverter.toCompletableFuture;
@@ -64,6 +63,7 @@ import build.buildfarm.common.DigestUtil.ActionKey;
 import build.buildfarm.common.EntryLimitException;
 import build.buildfarm.common.ExecutionProperties;
 import build.buildfarm.common.Poller;
+import build.buildfarm.common.Time;
 import build.buildfarm.common.TokenizableIterator;
 import build.buildfarm.common.TreeIterator;
 import build.buildfarm.common.TreeIterator.DirectoryEntry;
@@ -79,6 +79,7 @@ import build.buildfarm.v1test.ExecuteEntry;
 import build.buildfarm.v1test.GetClientStartTimeResult;
 import build.buildfarm.v1test.LabeledCount;
 import build.buildfarm.v1test.OperationIteratorToken;
+import build.buildfarm.v1test.OperationQueuerConfig;
 import build.buildfarm.v1test.ProfiledQueuedOperationMetadata;
 import build.buildfarm.v1test.ProvisionedQueue;
 import build.buildfarm.v1test.QueueEntry;
@@ -113,7 +114,6 @@ import com.google.protobuf.util.Durations;
 import com.google.protobuf.util.Timestamps;
 import com.google.rpc.PreconditionFailure;
 import io.grpc.Context;
-import io.grpc.Deadline;
 import io.grpc.Status;
 import io.grpc.Status.Code;
 import io.grpc.StatusException;
@@ -303,15 +303,12 @@ public class ShardInstance extends AbstractServerInstance {
   private final ScheduledExecutorService contextDeadlineScheduler =
       newSingleThreadScheduledExecutor();
   private final ExecutorService operationDeletionService = newSingleThreadExecutor();
-  private final BlockingQueue transformTokensQueue = new LinkedBlockingQueue(256);
+  private final BlockingQueue transformTokensQueue;
   private final boolean useDenyList;
   private Thread operationQueuer;
   private boolean stopping = false;
   private boolean stopped = true;
   private Thread prometheusMetricsThread;
-
-  // TODO: move to config
-  private static final Duration queueTimeout = Durations.fromSeconds(60);
 
   private static Duration getGrpcTimeout(ShardInstanceConfig config) {
     // return the configured
@@ -379,7 +376,7 @@ public class ShardInstance extends AbstractServerInstance {
             DEFAULT_MAX_LOCAL_ACTION_CACHE_SIZE, backplane, actionCacheFetchService),
         config.getRunDispatchedMonitor(),
         config.getDispatchedMonitorIntervalSeconds(),
-        config.getRunOperationQueuer(),
+        config.getOperationQueuer(),
         config.getMaxBlobSize(),
         config.getMaxCpu(),
         config.getMaximumActionTimeout(),
@@ -397,7 +394,7 @@ public class ShardInstance extends AbstractServerInstance {
       ReadThroughActionCache readThroughActionCache,
       boolean runDispatchedMonitor,
       int dispatchedMonitorIntervalSeconds,
-      boolean runOperationQueuer,
+      OperationQueuerConfig operationQueuerConfig,
       long maxBlobSize,
       int maxCpu,
       Duration maxActionTimeout,
@@ -439,7 +436,11 @@ public class ShardInstance extends AbstractServerInstance {
       dispatchedMonitor = null;
     }
 
-    if (runOperationQueuer) {
+    // Create and configure the operation queuer.
+    OperationQueuerSettings operationQueuerSettings =
+        createOperationQueuerSettings(operationQueuerConfig);
+    this.transformTokensQueue = new LinkedBlockingQueue(operationQueuerSettings.queueConcurrency);
+    if (operationQueuerSettings.run) {
       operationQueuer =
           new Thread(
               new Runnable() {
@@ -456,7 +457,7 @@ public class ShardInstance extends AbstractServerInstance {
                     return immediateFuture(null);
                   }
                   // half the watcher expiry, need to expose this from backplane
-                  Poller poller = new Poller(Durations.fromSeconds(5));
+                  Poller poller = new Poller(operationQueuerSettings.pollFrequency);
                   String operationName = executeEntry.getOperationName();
                   poller.resume(
                       () -> {
@@ -474,10 +475,11 @@ public class ShardInstance extends AbstractServerInstance {
                         return !stopping && !stopped;
                       },
                       () -> {},
-                      Deadline.after(5, MINUTES));
+                      Time.toDeadline(operationQueuerSettings.pollTimeout));
                   try {
                     logger.log(Level.FINE, "queueing " + operationName);
-                    ListenableFuture<Void> queueFuture = queue(executeEntry, poller, queueTimeout);
+                    ListenableFuture<Void> queueFuture =
+                        queue(executeEntry, poller, operationQueuerSettings.operationWriteTimeout);
                     addCallback(
                         queueFuture,
                         new FutureCallback<Void>() {
@@ -612,6 +614,16 @@ public class ShardInstance extends AbstractServerInstance {
               }
             },
             "Prometheus Metrics Collector");
+  }
+
+  private OperationQueuerSettings createOperationQueuerSettings(OperationQueuerConfig config) {
+    OperationQueuerSettings settings = new OperationQueuerSettings();
+    settings.run = config.getRun();
+    settings.operationWriteTimeout = Durations.fromSeconds(config.getOperationWriteTimeoutS());
+    settings.pollFrequency = Durations.fromSeconds(config.getPollFrequencyS());
+    settings.pollTimeout = Durations.fromSeconds(config.getPollTimeoutS());
+    settings.queueConcurrency = config.getQueueConcurrency();
+    return settings;
   }
 
   private void updateLabelCount(List<LabeledCount> list, Gauge gauge) {
