@@ -10,6 +10,7 @@ java_library(
         "//src/main/java/build/buildfarm/instance",
         "//src/main/java/build/buildfarm/instance/stub",
         "//src/main/java/build/buildfarm/worker",
+        "//src/main/java/build/buildfarm/worker:worker_context",
         "//src/main/java/build/buildfarm/worker/resources",
         "//src/main/protobuf:build_buildfarm_v1test_buildfarm_java_proto",
         "@maven//:com_github_pcj_google_options",

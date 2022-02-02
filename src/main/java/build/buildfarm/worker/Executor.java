@@ -32,6 +32,8 @@ import build.buildfarm.v1test.ExecutingOperationMetadata;
 import build.buildfarm.v1test.ExecutionPolicy;
 import build.buildfarm.v1test.ExecutionWrapper;
 import build.buildfarm.worker.WorkerContext.IOResource;
+import build.buildfarm.worker.determinism.DeterminismCheckSettings;
+import build.buildfarm.worker.determinism.DeterminismChecker;
 import build.buildfarm.worker.resources.ResourceLimits;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
@@ -428,6 +430,16 @@ class Executor {
     // allow debugging before an execution
     if (limits.debugBeforeExecution) {
       return ExecutionDebugger.performBeforeExecutionDebug(processBuilder, limits, resultBuilder);
+    }
+
+    // allow running an action multiple times to check determinism
+    if (limits.checkDeterminism > 0) {
+      DeterminismCheckSettings settings = new DeterminismCheckSettings();
+      settings.workerContext = workerContext;
+      settings.operationContext = operationContext;
+      settings.processBuilder = processBuilder;
+      settings.limits = limits;
+      return DeterminismChecker.checkActionDeterminism(settings, resultBuilder);
     }
 
     long startNanoTime = System.nanoTime();

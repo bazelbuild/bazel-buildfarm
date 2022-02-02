@@ -1,11 +1,50 @@
 java_library(
-    name = "worker",
-    srcs = glob(["*.java"]),
+    name = "operation_context",
+    srcs = ["OperationContext.java"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/main/java/build/buildfarm/common",
+        "//src/main/protobuf:build_buildfarm_v1test_buildfarm_java_proto",
+    ],
+)
+
+java_library(
+    name = "worker_context",
+    srcs = ["WorkerContext.java"],
     visibility = ["//visibility:public"],
     deps = [
         "//src/main/java/build/buildfarm/common",
         "//src/main/java/build/buildfarm/instance",
+        "//src/main/java/build/buildfarm/worker/resources",
+        "//src/main/protobuf:build_buildfarm_v1test_buildfarm_java_proto",
+        "@googleapis//:google_rpc_code_java_proto",
+        "@googleapis//:google_rpc_error_details_java_proto",
+        "@maven//:com_google_guava_guava",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_protobuf_protobuf_java_util",
+        "@maven//:io_grpc_grpc_api",
+        "@maven//:io_grpc_grpc_context",
+        "@maven//:io_grpc_grpc_protobuf",
+    ],
+)
+
+java_library(
+    name = "worker",
+    srcs = glob(
+        ["*.java"],
+        exclude = [
+            "OperationContext.java",
+            "WorkerContext.java",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":operation_context",
+        ":worker_context",
+        "//src/main/java/build/buildfarm/common",
+        "//src/main/java/build/buildfarm/instance",
         "//src/main/java/build/buildfarm/instance/stub",
+        "//src/main/java/build/buildfarm/worker/determinism",
         "//src/main/java/build/buildfarm/worker/resources",
         "//src/main/protobuf:build_buildfarm_v1test_buildfarm_java_proto",
         "@bazel//src/main/protobuf:execution_statistics_java_proto",
