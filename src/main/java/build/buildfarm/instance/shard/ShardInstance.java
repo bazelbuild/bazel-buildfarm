@@ -200,10 +200,15 @@ public class ShardInstance extends AbstractServerInstance {
           .help("Read I/O (bytes)")
           .register();
 
+  // Metrics for the distributed action cache of the backplane.
+  // The individual local action cache metrics are recorded inside the read-through cache
+  private static final Gauge actionCacheLookupSize =
+      Gauge.build().name("action_cache_lookup_size").help("Action Cache lookup size.").register();
+  private final ReadThroughActionCache readThroughActionCache;
+
   private final Runnable onStop;
   private final long maxEntrySizeBytes;
   private final Backplane backplane;
-  private final ReadThroughActionCache readThroughActionCache;
   private final RemoteInputStreamFactory remoteInputStreamFactory;
   private final com.google.common.cache.LoadingCache<String, Instance> workerStubs;
   private final Thread dispatchedMonitor;
@@ -283,7 +288,7 @@ public class ShardInstance extends AbstractServerInstance {
         digestUtil,
         backplane,
         new ShardActionCache(
-            DEFAULT_MAX_LOCAL_ACTION_CACHE_SIZE, backplane, actionCacheFetchService),
+            DEFAULT_MAX_LOCAL_ACTION_CACHE_SIZE, name, backplane, actionCacheFetchService),
         config.getRunDispatchedMonitor(),
         config.getDispatchedMonitorIntervalSeconds(),
         config.getRunOperationQueuer(),

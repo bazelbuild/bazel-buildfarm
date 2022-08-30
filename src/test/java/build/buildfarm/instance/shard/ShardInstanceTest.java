@@ -132,8 +132,9 @@ public class ShardInstanceTest {
   public void setUp() throws InterruptedException {
     MockitoAnnotations.initMocks(this);
     blobDigests = Sets.newHashSet();
+
     ReadThroughActionCache actionCache =
-        new ShardActionCache(10, mockBackplane, newDirectExecutorService());
+        new ShardActionCache(10, "name", mockBackplane, newDirectExecutorService());
     instance =
         new ShardInstance(
             "shard",

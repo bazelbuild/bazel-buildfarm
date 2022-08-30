@@ -106,6 +106,8 @@ def buildfarm_init(name = "buildfarm"):
                     ["io.grpc:grpc-%s:1.38.0" % module for module in IO_GRPC_MODULES] +
                     [
                         "io.prometheus:simpleclient:0.10.0",
+                        "io.prometheus:simpleclient_guava:0.10.0",
+                        "io.prometheus:simpleclient_caffeine:0.10.0",
                         "io.prometheus:simpleclient_hotspot:0.10.0",
                         "io.prometheus:simpleclient_httpserver:0.10.0",
                         "junit:junit:4.13.1",
