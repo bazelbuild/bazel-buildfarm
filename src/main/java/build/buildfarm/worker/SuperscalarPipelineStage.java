@@ -14,21 +14,14 @@
 
 package build.buildfarm.worker;
 
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 
 abstract class SuperscalarPipelineStage extends PipelineStage {
-  protected final int width;
-
   @SuppressWarnings("rawtypes")
-  protected final BlockingQueue claims;
+  protected final Slots slots;
 
   private volatile boolean catastrophic = false;
-
-  // ensure that only a single claim waits for available slots for core count
-  private final Object claimLock = new Object();
 
   @SuppressWarnings("rawtypes")
   public SuperscalarPipelineStage(
@@ -38,8 +31,8 @@ abstract class SuperscalarPipelineStage extends PipelineStage {
       PipelineStage error,
       int width) {
     super(name, workerContext, output, error);
-    this.width = width;
-    claims = new ArrayBlockingQueue(width);
+
+    slots = new Slots(width);
   }
 
   protected abstract void interruptAll();
@@ -95,66 +88,28 @@ abstract class SuperscalarPipelineStage extends PipelineStage {
     throw exception;
   }
 
-  protected synchronized void releaseClaim(String operationName, int slots) {
-    // clear interrupted flag for take
-    boolean interrupted = Thread.interrupted();
-    try {
-      for (int i = 0; i < slots; i++) {
-        claims.take();
-      }
-    } catch (InterruptedException e) {
-      catastrophic = true;
-      getLogger()
-          .log(
-              Level.SEVERE,
-              name
-                  + ": could not release claim on "
-                  + operationName
-                  + ", aborting drain to avoid deadlock");
-      close();
-    } finally {
-      notify();
-      if (interrupted) {
-        Thread.currentThread().interrupt();
-      }
-    }
+  protected synchronized void releaseClaim(String operationName, int count) {
+    slots.claims.release(count);
   }
 
   protected String getUsage(int size) {
-    return String.format("%s/%d", size, width);
+    return String.format("%s/%d", size, slots.width);
   }
 
   @SuppressWarnings("unchecked")
-  private boolean claim(int count) throws InterruptedException {
-    Object handle = new Object();
-    int claimed = 0;
-    synchronized (claimLock) {
-      while (count > 0 && !isClosed()) {
-        try {
-          if (claims.offer(handle, 10, TimeUnit.MILLISECONDS)) {
-            claimed++;
-            count--;
-          }
-        } catch (InterruptedException e) {
-          boolean interrupted = Thread.interrupted();
-          while (claimed != 0) {
-            interrupted = Thread.interrupted() || interrupted;
-            try {
-              claims.take();
-              claimed--;
-            } catch (InterruptedException intEx) {
-              // ignore, we must release our claims
-              e.addSuppressed(intEx);
-            }
-          }
-          if (interrupted) {
-            Thread.currentThread().interrupt();
-          }
-          throw e;
-        }
-      }
+  public boolean claim(int count) throws InterruptedException {
+    // Can't claim if stage is closed
+    if (isClosed()) {
+      return false;
     }
-    return count == 0;
+
+    // Wait until there is enough room to claim
+    slots.claims.acquire(count);
+    return true;
+  }
+
+  public int getSlotUsage() {
+    return slots.width - slots.claims.availablePermits();
   }
 
   @Override
@@ -169,6 +124,6 @@ abstract class SuperscalarPipelineStage extends PipelineStage {
 
   @Override
   protected boolean isClaimed() {
-    return claims.size() > 0;
+    return getSlotUsage() > 0;
   }
 }

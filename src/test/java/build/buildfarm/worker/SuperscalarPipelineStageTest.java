@@ -15,7 +15,6 @@
 package build.buildfarm.worker;
 
 import static com.google.common.truth.Truth.assertThat;
-import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static org.junit.Assert.fail;
 
 import com.google.longrunning.Operation;
@@ -70,46 +69,41 @@ public class SuperscalarPipelineStageTest {
     }
 
     boolean isFull() {
-      return claims.size() == width;
+      return getSlotUsage() == slots.width;
     }
   }
 
+  // There are no partial claims.  You wait until all your claims are available.
+  // In this example, there is room to claim and everything is claimed.
   @Test
-  public void interruptedClaimReleasesPartial() throws InterruptedException {
+  public void fillsClaims() throws InterruptedException {
     AbstractSuperscalarPipelineStage stage =
         new AbstractSuperscalarPipelineStage("too-narrow", /* output=*/ null, /* width=*/ 3) {
           @Override
           protected int claimsRequired(OperationContext operationContext) {
-            return 5;
+            return 3;
           }
         };
 
-    final Thread target = Thread.currentThread();
+    boolean claimed = stage.claim(/* operationContext=*/ null);
+    assertThat(claimed).isTrue();
+    assertThat(stage.isFull()).isTrue();
+  }
 
-    Thread interruptor =
-        new Thread(
-            () -> {
-              while (!stage.isFull()) {
-                try {
-                  MICROSECONDS.sleep(1);
-                } catch (InterruptedException e) {
-                  // ignore
-                }
-              }
-              target.interrupt();
-            });
-    interruptor.start();
-    // start a thread, when the stage is exhausted, interrupt this one
+  // In this example, there is room to claim and there are claims left over.
+  @Test
+  public void TakesSomeClaims() throws InterruptedException {
+    AbstractSuperscalarPipelineStage stage =
+        new AbstractSuperscalarPipelineStage("too-narrow", /* output=*/ null, /* width=*/ 3) {
+          @Override
+          protected int claimsRequired(OperationContext operationContext) {
+            return 2;
+          }
+        };
 
-    try {
-      stage.claim(/* operationContext=*/ null);
-      fail("should not get here");
-    } catch (InterruptedException e) {
-      // ignore
-    } finally {
-      interruptor.join();
-      assertThat(stage.isClaimed()).isFalse();
-    }
+    boolean claimed = stage.claim(/* operationContext=*/ null);
+    assertThat(claimed).isTrue();
+    assertThat(stage.isFull()).isFalse();
   }
 
   @Test
