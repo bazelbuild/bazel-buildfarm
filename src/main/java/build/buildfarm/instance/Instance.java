@@ -146,6 +146,8 @@ public interface Instance {
 
   CasIndexResults reindexCas();
 
+  void clearActionCache();
+
   void deregisterWorker(String workerName);
 
   class PutAllBlobsException extends RuntimeException {

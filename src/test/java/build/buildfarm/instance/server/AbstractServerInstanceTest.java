@@ -222,6 +222,11 @@ public class AbstractServerInstanceTest {
     public PrepareWorkerForGracefulShutDownRequestResults shutDownWorkerGracefully() {
       throw new UnsupportedOperationException();
     }
+
+    @Override
+    public void clearActionCache() {
+      throw new UnsupportedOperationException();
+    }
   }
 
   @Test
