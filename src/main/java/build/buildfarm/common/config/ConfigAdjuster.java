@@ -18,6 +18,7 @@ import build.buildfarm.common.ExecutionProperties;
 import build.buildfarm.common.ExecutionWrapperProperties;
 import build.buildfarm.common.ExecutionWrappers;
 import build.buildfarm.v1test.BuildFarmServerConfig;
+import build.buildfarm.v1test.ShardInstanceConfig;
 import build.buildfarm.v1test.ShardWorkerConfig;
 import build.buildfarm.v1test.WorkerConfig;
 import com.google.common.base.Strings;
@@ -90,6 +91,13 @@ public class ConfigAdjuster {
             builder.getExecuteStageWidth(), builder.getExecuteStageWidthOffset()));
 
     checkExecutionWrapperAvailability();
+
+    if (builder.getBackplaneCase() == ShardWorkerConfig.BackplaneCase.REDIS_SHARD_BACKPLANE_CONFIG
+        && builder.getRedisShardBackplaneConfigBuilder().getTimeout() == 0) {
+      int defaultDuration = 2000;
+      logger.log(Level.INFO, "No default timeout for redis.  Setting to: " + defaultDuration + "s");
+      builder.getRedisShardBackplaneConfigBuilder().setTimeout(defaultDuration);
+    }
   }
 
   /**
@@ -155,6 +163,23 @@ public class ConfigAdjuster {
       logger.log(
           Level.INFO,
           "Bytestream timeout not configured.  Setting to: " + defaultDuration.getSeconds() + "s");
+    }
+
+    if (builder.getInstanceBuilder().getShardInstanceConfigBuilder().getBackplaneCase()
+            == ShardInstanceConfig.BackplaneCase.REDIS_SHARD_BACKPLANE_CONFIG
+        && builder
+                .getInstanceBuilder()
+                .getShardInstanceConfigBuilder()
+                .getRedisShardBackplaneConfigBuilder()
+                .getTimeout()
+            == 0) {
+      int defaultDuration = 2000;
+      logger.log(Level.INFO, "No default timeout for redis.  Setting to: " + defaultDuration + "s");
+      builder
+          .getInstanceBuilder()
+          .getShardInstanceConfigBuilder()
+          .getRedisShardBackplaneConfigBuilder()
+          .setTimeout(defaultDuration);
     }
   }
 
