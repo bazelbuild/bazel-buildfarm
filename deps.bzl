@@ -5,8 +5,8 @@ buildfarm dependencies that can be imported into other WORKSPACE files
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file", "http_jar")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 
-RULES_JVM_EXTERNAL_TAG = "4.2"
-RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
+RULES_JVM_EXTERNAL_COMMIT = "560d150c19a22d0b7d76d476a477c3e4cb1694dc"
+RULES_JVM_EXTERNAL_SHA = "4d4709ec5c5c31b1e8ab40bf1d49575d563008533f9967f4d0a3f5ca37a89e96"
 
 def archive_dependencies(third_party):
     return [
@@ -20,9 +20,21 @@ def archive_dependencies(third_party):
         },
         {
             "name": "rules_jvm_external",
-            "strip_prefix": "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+            "strip_prefix": "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_COMMIT,
             "sha256": RULES_JVM_EXTERNAL_SHA,
-            "url": "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+            "url": "https://github.com/bazelbuild/rules_jvm_external/archive/%s.tar.gz" % RULES_JVM_EXTERNAL_COMMIT,
+        },
+        {
+            "name": "io_bazel_rules_go",
+            "strip_prefix": "rules_go-de2074e0af1df1a34a862ca6108ed15f760520df",
+            "sha256": "ea809c38ffa3e78c626d52cabe6c3ea23d6549494696f44775ed8248db051f9e",
+            "url": "https://github.com/bazelbuild/rules_go/archive/de2074e0af1df1a34a862ca6108ed15f760520df.zip",
+        },
+        {
+            "name": "bazel_gazelle",
+            "strip_prefix": "bazel-gazelle-8adf04f8f7587ec64dc0d616b7b5243cf49b3c9d",
+            "sha256": "019772279a0688f8f7c7c5f953ea82a3d380417027d59063f0797d660b0310b7",
+            "url": "https://github.com/bazelbuild/bazel-gazelle/archive/8adf04f8f7587ec64dc0d616b7b5243cf49b3c9d.zip",
         },
 
         # Kubernetes rules.  Useful for local development with tilt.
@@ -92,9 +104,9 @@ def archive_dependencies(third_party):
         },
         {
             "name": "io_bazel_rules_docker",
-            "sha256": "59536e6ae64359b716ba9c46c39183403b01eabfbd57578e84398b4829ca499a",
-            "strip_prefix": "rules_docker-0.22.0",
-            "urls": ["https://github.com/bazelbuild/rules_docker/releases/download/v0.22.0/rules_docker-v0.22.0.tar.gz"],
+            "sha256": "c7f9e97bb9f498f6bbbc842a0bcfaed1016b4355e9a7317f7ba0f413bc59ad71",
+            "strip_prefix": "rules_docker-fc729d85f284225cfc0b8c6d1d838f4b3e037749",
+            "urls": ["https://github.com/bazelbuild/rules_docker/archive/fc729d85f284225cfc0b8c6d1d838f4b3e037749.tar.gz"],
         },
 
         # Bazel is referenced as a dependency so that buildfarm can access the linux-sandbox as a potential execution wrapper.
