@@ -14,8 +14,10 @@
 
 package build.buildfarm.common.grpc;
 
+import build.bazel.remote.execution.v2.Platform.Property;
 import build.bazel.remote.execution.v2.RequestMetadata;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import io.grpc.ClientInterceptor;
 import io.grpc.Context;
 import io.grpc.Contexts;
@@ -35,6 +37,8 @@ public class TracingMetadataUtils {
   private static final Context.Key<RequestMetadata> CONTEXT_KEY =
       Context.key("remote-grpc-metadata");
 
+  private static ImmutableList<Property> capturedHeaders = ImmutableList.of();
+
   @VisibleForTesting
   public static final Metadata.Key<RequestMetadata> METADATA_KEY =
       ProtoUtils.keyForProto(RequestMetadata.getDefaultInstance());
@@ -45,7 +49,12 @@ public class TracingMetadataUtils {
     if (metadata == null) {
       metadata = RequestMetadata.getDefaultInstance();
     }
+
     return metadata;
+  }
+
+  public static Iterable<Property> headersFromCurrentContext() {
+    return capturedHeaders;
   }
 
   /**
@@ -71,8 +80,25 @@ public class TracingMetadataUtils {
       if (meta == null) {
         meta = RequestMetadata.getDefaultInstance();
       }
+
+      capturedHeaders = extractHeaders(headers);
+
       Context ctx = Context.current().withValue(CONTEXT_KEY, meta);
       return Contexts.interceptCall(ctx, call, headers, next);
+    }
+
+    private static ImmutableList<Property> extractHeaders(Metadata headers) {
+      ImmutableList.Builder<Property> capturedHeaders = ImmutableList.builder();
+      for (String key : headers.keys()) {
+        if (!key.endsWith(Metadata.BINARY_HEADER_SUFFIX)) {
+          String val = headers.get(Metadata.Key.of(key, Metadata.ASCII_STRING_MARSHALLER));
+          Property.Builder property = Property.newBuilder();
+          property.setName(key);
+          property.setValue(val);
+          capturedHeaders.add(property.build());
+        }
+      }
+      return capturedHeaders.build();
     }
   }
 }
