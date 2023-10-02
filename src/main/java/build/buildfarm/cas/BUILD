@@ -7,6 +7,7 @@ java_library(
         "@maven//:org_xerial_sqlite_jdbc",
     ],
     deps = [
+        "//src/main/java/build/buildfarm/backplane",
         "//src/main/java/build/buildfarm/common",
         "//src/main/java/build/buildfarm/common/config",
         "//src/main/java/build/buildfarm/common/grpc",
@@ -27,6 +28,7 @@ java_library(
         "@maven//:io_grpc_grpc_core",
         "@maven//:io_grpc_grpc_protobuf",
         "@maven//:io_grpc_grpc_stub",
+        "@maven//:io_netty_netty_codec_http",
         "@maven//:io_prometheus_simpleclient",
         "@maven//:net_jcip_jcip_annotations",
         "@maven//:org_projectlombok_lombok",

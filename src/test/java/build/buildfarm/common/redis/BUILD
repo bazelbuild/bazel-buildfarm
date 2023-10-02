@@ -6,6 +6,8 @@ COMMON_DEPS = [
     "//src/main/protobuf:build_buildfarm_v1test_buildfarm_java_proto",
     "//src/test/java/build/buildfarm:test_runner",
     "//third_party/jedis",
+    "@maven//:com_github_fppt_jedis_mock",
+    "@maven//:com_google_guava_guava",
     "@maven//:com_google_truth_truth",
     "@maven//:io_grpc_grpc_api",
     "@maven//:org_mockito_mockito_core",
@@ -17,6 +19,7 @@ NATIVE_REDIS_TESTS = [
     "RedisQueueTest.java",
     "RedisPriorityQueueTest.java",
     "RedisHashMapTest.java",
+    "RedisSortedSetTest.java",
 ]
 
 java_test(

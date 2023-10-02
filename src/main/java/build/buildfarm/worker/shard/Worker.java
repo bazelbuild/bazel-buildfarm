@@ -27,15 +27,16 @@ import static java.util.logging.Level.SEVERE;
 
 import build.bazel.remote.execution.v2.Compressor;
 import build.bazel.remote.execution.v2.Digest;
-import build.buildfarm.admin.aws.AwsAdmin;
 import build.buildfarm.backplane.Backplane;
 import build.buildfarm.cas.ContentAddressableStorage;
 import build.buildfarm.cas.ContentAddressableStorage.Blob;
 import build.buildfarm.cas.MemoryCAS;
+import build.buildfarm.cas.cfc.CASAccessMetricsRecorder;
 import build.buildfarm.cas.cfc.CASFileCache;
 import build.buildfarm.common.BuildfarmExecutors;
 import build.buildfarm.common.DigestUtil;
 import build.buildfarm.common.InputStreamFactory;
+import build.buildfarm.common.LoggingMain;
 import build.buildfarm.common.config.BuildfarmConfigs;
 import build.buildfarm.common.config.Cas;
 import build.buildfarm.common.config.GrpcMetrics;
@@ -58,9 +59,10 @@ import build.buildfarm.worker.Pipeline;
 import build.buildfarm.worker.PipelineStage;
 import build.buildfarm.worker.PutOperationStage;
 import build.buildfarm.worker.ReportResultStage;
+import build.buildfarm.worker.SuperscalarPipelineStage;
+import build.buildfarm.worker.resources.LocalResourceSetUtils;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Lists;
-import com.google.devtools.common.options.OptionsParsingException;
 import com.google.longrunning.Operation;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Duration;
@@ -69,6 +71,7 @@ import io.grpc.ServerBuilder;
 import io.grpc.Status;
 import io.grpc.Status.Code;
 import io.grpc.health.v1.HealthCheckResponse.ServingStatus;
+import io.grpc.protobuf.services.ProtoReflectionService;
 import io.grpc.services.HealthStatusManager;
 import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
@@ -85,21 +88,14 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import javax.annotation.Nullable;
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import javax.naming.ConfigurationException;
 import lombok.extern.java.Log;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.ComponentScan;
 
 @Log
-@SpringBootApplication
-@ComponentScan("build.buildfarm")
-public class Worker {
+public final class Worker extends LoggingMain {
   private static final java.util.logging.Logger nettyLogger =
       java.util.logging.Logger.getLogger("io.grpc.netty");
   private static final Counter healthCheckMetric =
@@ -128,7 +124,7 @@ public class Worker {
   private boolean inGracefulShutdown = false;
   private boolean isPaused = false;
 
-  private ShardWorkerInstance instance;
+  private WorkerInstance instance;
 
   @SuppressWarnings("deprecation")
   private final HealthStatusManager healthStatusManager = new HealthStatusManager();
@@ -140,54 +136,57 @@ public class Worker {
   private Pipeline pipeline;
   private Backplane backplane;
   private LoadingCache<String, Instance> workerStubs;
-  @Autowired private AwsAdmin awsAdmin;
+  private AtomicBoolean released = new AtomicBoolean(true);
+  @Nullable private CASAccessMetricsRecorder casAccessMetricsRecorder;
 
   /**
-   * The method will prepare the worker for graceful shutdown and send out grpc request to disable
-   * scale in protection when the worker is ready. If unexpected errors happened, it will cancel the
-   * graceful shutdown progress make the worker available again.
+   * The method will prepare the worker for graceful shutdown when the worker is ready. Note on
+   * using stderr here instead of log. By the time this is called in PreDestroy, the log is no
+   * longer available and is not logging messages.
    */
   public void prepareWorkerForGracefulShutdown() {
-    inGracefulShutdown = true;
-    log.log(
-        Level.INFO,
-        "The current worker will not be registered again and should be shutdown gracefully!");
-    pipeline.stopMatchingOperations();
-    int scanRate = 30; // check every 30 seconds
-    int timeWaited = 0;
-    int timeOut = 60 * 15; // 15 minutes
-
-    try {
-      while (!pipeline.isEmpty() && timeWaited < timeOut) {
-        SECONDS.sleep(scanRate);
-        timeWaited += scanRate;
-        log.log(INFO, String.format("Pipeline is still not empty after %d seconds.", timeWaited));
-      }
-    } catch (InterruptedException e) {
-      log.log(Level.SEVERE, "The worker gracefully shutdown is interrupted: " + e.getMessage());
-    } finally {
-      // make a grpc call to disable scale protection
-      String clusterEndpoint = configs.getServer().getAdmin().getClusterEndpoint();
-      log.log(
-          INFO,
+    if (configs.getWorker().getGracefulShutdownSeconds() == 0) {
+      log.info(
           String.format(
-              "It took the worker %d seconds to %s",
-              timeWaited,
-              pipeline.isEmpty() ? "finish all actions" : "but still cannot finish all actions"));
+              "Graceful Shutdown is not enabled. Worker is shutting down without finishing executions in progress."));
+    } else {
+      inGracefulShutdown = true;
+      log.info(
+          "Graceful Shutdown - The current worker will not be registered again and should be shutdown gracefully!");
+      pipeline.stopMatchingOperations();
+      int scanRate = 30; // check every 30 seconds
+      int timeWaited = 0;
+      int timeOut = configs.getWorker().getGracefulShutdownSeconds();
       try {
-        awsAdmin.disableHostScaleInProtection(clusterEndpoint, configs.getWorker().getPublicName());
-      } catch (Exception e) {
-        log.log(
-            SEVERE,
+        if (pipeline.isEmpty()) {
+          log.info("Graceful Shutdown - no work in the pipeline.");
+        } else {
+          log.info(String.format("Graceful Shutdown - waiting for executions to finish."));
+        }
+        while (!pipeline.isEmpty() && timeWaited < timeOut) {
+          SECONDS.sleep(scanRate);
+          timeWaited += scanRate;
+          log.info(
+              String.format(
+                  "Graceful Shutdown - Pipeline is still not empty after %d seconds.", timeWaited));
+        }
+      } catch (InterruptedException e) {
+        log.info(
+            "Graceful Shutdown - The worker gracefully shutdown is interrupted: " + e.getMessage());
+      } finally {
+        log.info(
             String.format(
-                "gRPC call to AdminService to disable scale in protection failed with exception: %s and stacktrace %s",
-                e.getMessage(), Arrays.toString(e.getStackTrace())));
-        // Gracefully shutdown cannot be performed successfully because of error in
-        // AdminService side. Under this scenario, the worker has to be added back to the worker
-        // pool.
-        inGracefulShutdown = false;
+                "Graceful Shutdown - It took the worker %d seconds to %s",
+                timeWaited,
+                pipeline.isEmpty()
+                    ? "finish all actions"
+                    : "gracefully shutdown but still cannot finish all actions"));
       }
     }
+  }
+
+  private Worker() {
+    super("BuildFarmShardWorker");
   }
 
   private Operation stripOperation(Operation operation) {
@@ -200,7 +199,7 @@ public class Worker {
 
   private Server createServer(
       ServerBuilder<?> serverBuilder,
-      ContentAddressableStorage storage,
+      @Nullable CASFileCache storage,
       Instance instance,
       Pipeline pipeline,
       ShardWorkerContext context) {
@@ -208,19 +207,20 @@ public class Worker {
     serverBuilder.addService(new ContentAddressableStorageService(instance));
     serverBuilder.addService(new ByteStreamService(instance));
     serverBuilder.addService(new ShutDownWorkerGracefully(this));
+    serverBuilder.addService(ProtoReflectionService.newInstance());
 
     // We will build a worker's server based on it's capabilities.
     // A worker that is capable of execution will construct an execution pipeline.
     // It will use various execution phases for it's profile service.
     // On the other hand, a worker that is only capable of CAS storage does not need a pipeline.
     if (configs.getWorker().getCapabilities().isExecution()) {
-      PipelineStage completeStage =
-          new PutOperationStage((operation) -> context.deactivate(operation.getName()));
+      PutOperationStage completeStage =
+          new PutOperationStage(operation -> context.deactivate(operation.getName()));
       PipelineStage errorStage = completeStage; /* new ErrorStage(); */
       PipelineStage reportResultStage = new ReportResultStage(context, completeStage, errorStage);
-      PipelineStage executeActionStage =
+      SuperscalarPipelineStage executeActionStage =
           new ExecuteActionStage(context, reportResultStage, errorStage);
-      PipelineStage inputFetchStage =
+      SuperscalarPipelineStage inputFetchStage =
           new InputFetchStage(context, executeActionStage, new PutOperationStage(context::requeue));
       PipelineStage matchStage = new MatchStage(context, inputFetchStage, errorStage);
 
@@ -231,7 +231,13 @@ public class Worker {
 
       serverBuilder.addService(
           new WorkerProfileService(
-              storage, inputFetchStage, executeActionStage, context, completeStage, backplane));
+              storage,
+              matchStage,
+              inputFetchStage,
+              executeActionStage,
+              reportResultStage,
+              completeStage,
+              backplane));
     }
     GrpcMetrics.handleGrpcMetricIntercepts(serverBuilder, configs.getWorker().getGrpcMetrics());
     serverBuilder.intercept(new ServerHeadersInterceptor());
@@ -344,7 +350,8 @@ public class Worker {
         throw new IllegalArgumentException("Invalid cas type specified");
       case MEMORY:
       case FUSE: // FIXME have FUSE refer to a name for storage backing, and topo
-        return new MemoryCAS(cas.getMaxSizeBytes(), this::onStoragePut, delegate);
+        return new MemoryCAS(
+            cas.getMaxSizeBytes(), this::onStoragePut, this::onReadComplete, delegate);
       case GRPC:
         checkState(delegate == null, "grpc cas cannot delegate");
         return createGrpcCAS(cas);
@@ -357,12 +364,12 @@ public class Worker {
             // delegate level
             cas.getHexBucketLevels(),
             cas.isFileDirectoriesIndexInMemory(),
-            cas.isPublishTtlMetric(),
             cas.isExecRootCopyFallback(),
             digestUtil,
             removeDirectoryService,
             accessRecorder,
             this::onStoragePut,
+            this::onReadComplete,
             delegate == null ? this::onStorageExpire : (digests) -> {},
             delegate,
             delegateSkipLoad);
@@ -379,7 +386,8 @@ public class Worker {
         fileCache,
         owner,
         configs.getWorker().isLinkInputDirectories(),
-        configs.getWorker().getRealInputDirectories(),
+        configs.getWorker().getLinkedInputDirectories(),
+        configs.isAllowSymlinkTargetAbsolute(),
         removeDirectoryService,
         accessRecorder
         /* deadlineAfter=*/
@@ -391,6 +399,9 @@ public class Worker {
       // if the worker is a CAS member, it can send/modify blobs in the backplane.
       if (configs.getWorker().getCapabilities().isCas()) {
         backplane.addBlobLocation(digest, configs.getWorker().getPublicName());
+      }
+      if (configs.getBackplane().getCasMetrics().isEnabled() && casAccessMetricsRecorder != null) {
+        casAccessMetricsRecorder.recordWrite(digest);
       }
     } catch (IOException e) {
       throw Status.fromThrowable(e).asRuntimeException();
@@ -405,6 +416,12 @@ public class Worker {
       } catch (IOException e) {
         throw Status.fromThrowable(e).asRuntimeException();
       }
+    }
+  }
+
+  private void onReadComplete(Digest digest) {
+    if (configs.getBackplane().getCasMetrics().isEnabled() && casAccessMetricsRecorder != null) {
+      casAccessMetricsRecorder.recordRead(digest);
     }
   }
 
@@ -505,13 +522,6 @@ public class Worker {
                   }
                 } catch (InterruptedException e) {
                   // ignore
-                } finally {
-                  try {
-                    stop();
-                  } catch (InterruptedException ie) {
-                    log.log(SEVERE, "interrupted while stopping worker", ie);
-                    // ignore
-                  }
                 }
               }
             },
@@ -531,6 +541,7 @@ public class Worker {
   }
 
   public void start() throws ConfigurationException, InterruptedException, IOException {
+    released.set(false);
     String session = UUID.randomUUID().toString();
     ServerBuilder<?> serverBuilder = ServerBuilder.forPort(configs.getWorker().getPort());
     String identifier = "buildfarm-worker-" + configs.getWorker().getPublicName() + "-" + session;
@@ -543,7 +554,12 @@ public class Worker {
 
     if (SHARD.equals(configs.getBackplane().getType())) {
       backplane =
-          new RedisShardBackplane(identifier, this::stripOperation, this::stripQueuedOperation);
+          new RedisShardBackplane(
+              identifier,
+              /* subscribeToBackplane=*/ false,
+              /* runFailsafeOperation=*/ false,
+              this::stripOperation,
+              this::stripQueuedOperation);
       backplane.start(configs.getWorker().getPublicName());
     } else {
       throw new IllegalArgumentException("Shard Backplane not set in config");
@@ -575,14 +591,13 @@ public class Worker {
             remoteInputStreamFactory, removeDirectoryService, accessRecorder, storage);
 
     instance =
-        new ShardWorkerInstance(
-            configs.getWorker().getPublicName(), digestUtil, backplane, storage);
+        new WorkerInstance(configs.getWorker().getPublicName(), digestUtil, backplane, storage);
 
     // Create the appropriate writer for the context
     CasWriter writer;
     if (!configs.getWorker().getCapabilities().isCas()) {
       Retrier retrier = new Retrier(Backoff.sequential(5), Retrier.DEFAULT_IS_RETRIABLE);
-      writer = new RemoteCasWriter(backplane.getStorageWorkers(), workerStubs, retrier);
+      writer = new RemoteCasWriter(backplane, workerStubs, retrier);
     } else {
       writer = new LocalCasWriter(execFileSystem);
     }
@@ -609,16 +624,27 @@ public class Worker {
             configs.getWorker().isOnlyMulticoreTests(),
             configs.getWorker().isAllowBringYourOwnContainer(),
             configs.getWorker().isErrorOperationRemainingResources(),
+            configs.getWorker().isErrorOperationOutputSizeExceeded(),
+            LocalResourceSetUtils.create(configs.getWorker().getResources()),
             writer);
 
     pipeline = new Pipeline();
-    server = createServer(serverBuilder, storage, instance, pipeline, context);
+    server = createServer(serverBuilder, (CASFileCache) storage, instance, pipeline, context);
 
     removeWorker(configs.getWorker().getPublicName());
 
     boolean skipLoad = configs.getWorker().getStorages().get(0).isSkipLoad();
     execFileSystem.start(
         (digests) -> addBlobsLocation(digests, configs.getWorker().getPublicName()), skipLoad);
+
+    if (configs.getBackplane().getCasMetrics().isEnabled()) {
+      casAccessMetricsRecorder =
+          new CASAccessMetricsRecorder(
+              backplane,
+              java.time.Duration.ofSeconds(configs.getBackplane().getCasMetrics().getCasReadCountWindow()),
+              java.time.Duration.ofSeconds(configs.getBackplane().getCasMetrics().getCasReadCountUpdateInterval()));
+      casAccessMetricsRecorder.start();
+    }
 
     server.start();
     healthStatusManager.setStatus(
@@ -634,9 +660,42 @@ public class Worker {
     log.log(INFO, String.format("%s initialized", identifier));
   }
 
-  @PreDestroy
-  public void stop() throws InterruptedException {
-    System.err.println("*** shutting down gRPC server since JVM is shutting down");
+  @Override
+  protected void onShutdown() throws InterruptedException {
+    initiateShutdown();
+    awaitRelease();
+  }
+
+  private void awaitTermination() throws InterruptedException {
+    pipeline.join();
+    server.awaitTermination();
+  }
+
+  public void initiateShutdown() {
+    pipeline.stopMatchingOperations();
+    if (server != null) {
+      server.shutdown();
+    }
+  }
+
+  private synchronized void awaitRelease() throws InterruptedException {
+    while (!released.get()) {
+      wait();
+    }
+  }
+
+  public synchronized void stop() throws InterruptedException {
+    try {
+      shutdown();
+    } finally {
+      released.set(true);
+      notify();
+    }
+  }
+
+  private void shutdown() throws InterruptedException {
+    log.info("*** shutting down gRPC server since JVM is shutting down");
+    prepareWorkerForGracefulShutdown();
     PrometheusPublisher.stopHttpServer();
     boolean interrupted = Thread.interrupted();
     if (pipeline != null) {
@@ -654,11 +713,15 @@ public class Worker {
     executionSlotsTotal.set(0);
     inputFetchSlotsTotal.set(0);
     if (execFileSystem != null) {
-      log.log(INFO, "Stopping exec filesystem");
+      log.info("Stopping exec filesystem");
       execFileSystem.stop();
+      execFileSystem = null;
+    }
+    if (casAccessMetricsRecorder != null) {
+      casAccessMetricsRecorder.stop();
     }
     if (server != null) {
-      log.log(INFO, "Shutting down the server");
+      log.info("Shutting down the server");
       server.shutdown();
 
       try {
@@ -669,26 +732,28 @@ public class Worker {
       } finally {
         server.shutdownNow();
       }
+      server = null;
     }
     if (backplane != null) {
       try {
         backplane.stop();
+        backplane = null;
       } catch (InterruptedException e) {
         interrupted = true;
       }
     }
     if (workerStubs != null) {
       workerStubs.invalidateAll();
+      workerStubs = null;
     }
     if (interrupted) {
       Thread.currentThread().interrupt();
       throw new InterruptedException();
     }
-    System.err.println("*** server shut down");
+    log.info("*** server shut down");
   }
 
-  @PostConstruct
-  public void init() throws OptionsParsingException {
+  public static void main(String[] args) throws Exception {
     // Only log severe log messages from Netty. Otherwise it logs warnings that look like this:
     //
     // 170714 08:16:28.552:WT 18 [io.grpc.netty.NettyServerHandler.onStreamError] Stream Error
@@ -696,19 +761,17 @@ public class Worker {
     // unknown stream 11369
     nettyLogger.setLevel(SEVERE);
 
-    try {
-      start();
-    } catch (IOException e) {
-      System.err.println("error: " + formatIOError(e));
-    } catch (InterruptedException e) {
-      System.out.println("error: interrupted");
-    } catch (ConfigurationException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  public static void main(String[] args) throws ConfigurationException {
     configs = BuildfarmConfigs.loadWorkerConfigs(args);
-    SpringApplication.run(Worker.class, args);
+    Worker worker = new Worker();
+    try {
+      worker.start();
+      worker.awaitTermination();
+    } catch (IOException e) {
+      log.severe(formatIOError(e));
+    } catch (InterruptedException e) {
+      log.log(Level.WARNING, "interrupted", e);
+    } finally {
+      worker.stop();
+    }
   }
 }

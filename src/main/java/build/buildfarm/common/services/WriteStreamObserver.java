@@ -271,7 +271,8 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
 
   private boolean errorResponse(Throwable t) {
     if (exception.compareAndSet(null, t)) {
-      if (Status.fromThrowable(t).getCode() == Status.Code.CANCELLED) {
+      if (Status.fromThrowable(t).getCode() == Status.Code.CANCELLED
+          || Context.current().isCancelled()) {
         return false;
       }
       boolean isEntryLimitException = t instanceof EntryLimitException;
@@ -291,6 +292,13 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
                 requestMetadata.getToolInvocationId(),
                 requestMetadata.getActionId(),
                 name));
+      } else {
+        log.log(
+            Level.WARNING,
+            format(
+                "error %s after %d requests and %d bytes at offset %d",
+                name, requestCount, requestBytes, earliestOffset),
+            t);
       }
       return true;
     }

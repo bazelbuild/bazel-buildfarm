@@ -65,6 +65,7 @@ import build.buildfarm.common.ZstdDecompressingOutputStream;
 import build.buildfarm.common.config.Cas;
 import build.buildfarm.common.grpc.Retrier;
 import build.buildfarm.common.grpc.Retrier.Backoff;
+import build.buildfarm.common.grpc.TracingMetadataUtils;
 import build.buildfarm.common.io.CountingOutputStream;
 import build.buildfarm.common.io.Directories;
 import build.buildfarm.common.io.FeedbackOutputStream;
@@ -92,6 +93,7 @@ import io.grpc.Deadline;
 import io.grpc.StatusException;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.ServerCallStreamObserver;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.Histogram;
@@ -99,6 +101,8 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.file.FileAlreadyExistsException;
@@ -145,7 +149,19 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       Gauge.build().name("cas_size").help("CAS size.").register();
   private static final Gauge casEntryCountMetric =
       Gauge.build().name("cas_entry_count").help("Number of entries in the CAS.").register();
-  private static Histogram casTtl;
+  private static Histogram casTtl =
+      Histogram.build()
+          .name("cas_ttl_s")
+          .buckets(
+              3600, // 1 hour
+              21600, // 6 hours
+              86400, // 1 day
+              345600, // 4 days
+              604800, // 1 week
+              1210000 // 2 weeks
+              )
+          .help("The amount of time CAS entries live on L1 storage before expiration (seconds)")
+          .register();
 
   private static final Gauge casCopyFallbackMetric =
       Gauge.build()
@@ -160,11 +176,11 @@ public abstract class CASFileCache implements ContentAddressableStorage {
   private final EntryPathStrategy entryPathStrategy;
   private final long maxSizeInBytes;
   private final long maxEntrySizeInBytes;
-  private final boolean publishTtlMetric;
   private final boolean execRootFallback;
   private final DigestUtil digestUtil;
   private final ConcurrentMap<String, Entry> storage;
   private final Consumer<Digest> onPut;
+  private final Consumer<Digest> onReadComplete;
   private final Consumer<Iterable<Digest>> onExpire;
   private final Executor accessRecorder;
   private final ExecutorService expireService;
@@ -306,7 +322,6 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         maxEntrySizeInBytes,
         config.getHexBucketLevels(),
         config.isFileDirectoriesIndexInMemory(),
-        config.isPublishTtlMetric(),
         config.isExecRootCopyFallback(),
         digestUtil,
         expireService,
@@ -314,6 +329,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         /* storage=*/ Maps.newConcurrentMap(),
         /* directoriesIndexDbName=*/ DEFAULT_DIRECTORIES_INDEX_NAME,
         /* onPut=*/ (digest) -> {},
+        /* onReadComplete=*/ (digest) -> {},
         /* onExpire=*/ (digests) -> {},
         /* delegate=*/ null,
         /* delegateSkipLoad=*/ false);
@@ -325,7 +341,6 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       long maxEntrySizeInBytes,
       int hexBucketLevels,
       boolean storeFileDirsIndexInMemory,
-      boolean publishTtlMetric,
       boolean execRootFallback,
       DigestUtil digestUtil,
       ExecutorService expireService,
@@ -333,39 +348,24 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       ConcurrentMap<String, Entry> storage,
       String directoriesIndexDbName,
       Consumer<Digest> onPut,
+      Consumer<Digest> onReadComplete,
       Consumer<Iterable<Digest>> onExpire,
       @Nullable ContentAddressableStorage delegate,
       boolean delegateSkipLoad) {
     this.root = root;
     this.maxSizeInBytes = maxSizeInBytes;
     this.maxEntrySizeInBytes = maxEntrySizeInBytes;
-    this.publishTtlMetric = publishTtlMetric;
     this.execRootFallback = execRootFallback;
     this.digestUtil = digestUtil;
     this.expireService = expireService;
     this.accessRecorder = accessRecorder;
     this.storage = storage;
     this.onPut = onPut;
+    this.onReadComplete = onReadComplete;
     this.onExpire = onExpire;
     this.delegate = delegate;
     this.delegateSkipLoad = delegateSkipLoad;
     this.directoriesIndexDbName = directoriesIndexDbName;
-
-    if (publishTtlMetric) {
-      casTtl =
-          Histogram.build()
-              .name("cas_ttl_s")
-              .buckets(
-                  3600, // 1 hour
-                  21600, // 6 hours
-                  86400, // 1 day
-                  345600, // 4 days
-                  604800, // 1 week
-                  1210000 // 2 weeks
-                  )
-              .help("The amount of time CAS entries live on L1 storage before expiration (seconds)")
-              .register();
-    }
 
     entryPathStrategy = new HexBucketEntryPathStrategy(root, hexBucketLevels);
 
@@ -614,6 +614,20 @@ public abstract class CASFileCache implements ContentAddressableStorage {
 
   private static final int CHUNK_SIZE = 128 * 1024;
 
+  private static boolean shouldReadThrough(RequestMetadata requestMetadata) {
+    try {
+      URI uri = new URI(requestMetadata.getCorrelatedInvocationsId());
+      QueryStringDecoder decoder = new QueryStringDecoder(uri);
+      return decoder
+          .parameters()
+          .getOrDefault("THROUGH", ImmutableList.of("false"))
+          .get(0)
+          .equals("true");
+    } catch (URISyntaxException e) {
+      return false;
+    }
+  }
+
   @Override
   public void get(
       Compressor.Value compressor,
@@ -622,9 +636,28 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       long count,
       ServerCallStreamObserver<ByteString> blobObserver,
       RequestMetadata requestMetadata) {
+    boolean readThrough = shouldReadThrough(requestMetadata);
     InputStream in;
     try {
-      in = newInput(compressor, digest, offset);
+      if (readThrough && !contains(digest, /* result=*/ null)) {
+        // really need to be able to reuse/restart the same write over
+        // multiple requests - if we get successive read throughs for a single
+        // digest, we should pick up from where we were last time
+        // Also servers should affinitize
+        // And share data, so that they can pick the same worker to pull from
+        // if possible.
+        Write write = getWrite(compressor, digest, UUID.randomUUID(), requestMetadata);
+        blobObserver.setOnCancelHandler(write::reset);
+        in =
+            new ReadThroughInputStream(
+                newExternalInput(compressor, digest, 0),
+                localOffset -> newTransparentInput(compressor, digest, localOffset),
+                digest.getSizeBytes(),
+                offset,
+                write);
+      } else {
+        in = newInput(compressor, digest, offset);
+      }
     } catch (IOException e) {
       blobObserver.onError(e);
       return;
@@ -687,6 +720,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         if (len < 0) {
           in.close();
           blobObserver.onCompleted();
+          onReadComplete.accept(digest);
         }
       }
     }
@@ -886,6 +920,9 @@ public abstract class CASFileCache implements ContentAddressableStorage {
                       + key.getIdentifier(),
                   e);
             } finally {
+              if (closedFuture != null) {
+                closedFuture.set(null);
+              }
               isReset = true;
             }
           }
@@ -1922,7 +1959,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       lock = keyLocks.get(key);
     } catch (ExecutionException e) {
       // impossible without exception instantiating lock
-      throw new RuntimeException(e);
+      throw new RuntimeException(e.getCause());
     }
 
     lock.lock();
@@ -2181,7 +2218,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     return directory;
   }
 
-  public ListenableFuture<Path> putDirectory(
+  public ListenableFuture<PathResult> putDirectory(
       Digest digest, Map<Digest, Directory> directoriesIndex, ExecutorService service) {
     // Claim lock.
     // Claim the directory path so no other threads try to create/delete it.
@@ -2197,7 +2234,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     log.log(Level.FINER, format("locked directory %s", path.getFileName()));
 
     // Now that a lock has been claimed, we can proceed to create the directory.
-    ListenableFuture<Path> putFuture;
+    ListenableFuture<PathResult> putFuture;
     try {
       putFuture = putDirectorySynchronized(path, digest, directoriesIndex, service);
     } catch (IOException e) {
@@ -2252,8 +2289,26 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     return false;
   }
 
+  public static class PathResult {
+    private final Path path;
+    private final boolean missed;
+
+    public PathResult(Path path, boolean missed) {
+      this.path = path;
+      this.missed = missed;
+    }
+
+    public Path getPath() {
+      return path;
+    }
+
+    public boolean getMissed() {
+      return missed;
+    }
+  }
+
   @SuppressWarnings("ConstantConditions")
-  private ListenableFuture<Path> putDirectorySynchronized(
+  private ListenableFuture<PathResult> putDirectorySynchronized(
       Path path, Digest digest, Map<Digest, Directory> directoriesByDigest, ExecutorService service)
       throws IOException {
     log.log(Level.FINER, format("directory %s has been locked", path.getFileName()));
@@ -2285,7 +2340,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         if (e != null) {
           log.log(Level.FINER, format("found existing entry for %s", path.getFileName()));
           if (directoryEntryExists(path, e, directoriesByDigest)) {
-            return immediateFuture(path);
+            return immediateFuture(new PathResult(path, /* missed=*/ false));
           }
           log.log(
               Level.SEVERE,
@@ -2418,7 +2473,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
                       : directoriesByDigest.get(digest),
                   Deadline.after(10, SECONDS));
           directoryStorage.put(digest, e);
-          return path;
+          return new PathResult(path, /* missed=*/ true);
         },
         service);
   }
@@ -2710,25 +2765,19 @@ public abstract class CASFileCache implements ContentAddressableStorage {
   }
 
   private void deleteExpiredKey(String key) throws IOException {
-    // We don't want publishing the metric to delay the deletion of the file.
-    // We publish the metric only after the file has been deleted.
-    long createdTime = 0;
     Path path = getRemovingPath(key);
-    if (publishTtlMetric) {
-      createdTime = path.toFile().lastModified();
-    }
+    long createdTimeMs = Files.getLastModifiedTime(path).to(MILLISECONDS);
 
     Files.delete(path);
 
-    if (publishTtlMetric) {
-      publishExpirationMetric(createdTime);
-    }
+    publishExpirationMetric(createdTimeMs);
   }
 
-  private void publishExpirationMetric(long createdTime) {
-    long currentTime = new Date().getTime();
-    long ttl = currentTime - createdTime;
-    casTtl.observe(Time.millisecondsToSeconds(ttl));
+  private void publishExpirationMetric(long createdTimeMs) {
+    // TODO introduce ttl clock
+    long currentTimeMs = new Date().getTime();
+    long ttlMs = currentTimeMs - createdTimeMs;
+    casTtl.observe(Time.millisecondsToSeconds(ttlMs));
   }
 
   @SuppressWarnings({"ConstantConditions", "ResultOfMethodCallIgnored"})
@@ -3005,6 +3054,15 @@ public abstract class CASFileCache implements ContentAddressableStorage {
             throw new IllegalStateException("storage conflict with existing key for " + key);
           }
         } else if (writeWinner.get()) {
+          RequestMetadata requestMetadata = TracingMetadataUtils.fromCurrentContext();
+          log.log(
+              Level.INFO,
+              format(
+                  "Successfully wrote: %s; metadata: actionId - %s, actionMnemonic - %s, target - %s",
+                  key,
+                  requestMetadata.getActionId(),
+                  requestMetadata.getActionMnemonic(),
+                  requestMetadata.getTargetId()));
           log.log(Level.FINER, "won the race to insert " + key);
           try {
             onInsert.run();

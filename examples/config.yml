@@ -3,6 +3,7 @@ defaultActionTimeout: 600
 maximumActionTimeout: 3600
 maxEntrySizeBytes: 2147483648 # 2 * 1024 * 1024 * 1024
 prometheusPort: 9090
+allowSymlinkTargetAbsolute: false
 server:
   instanceType: SHARD
   name: shard
@@ -12,6 +13,7 @@ server:
     enabled: true
     provideLatencyHistograms: true
     latencyBuckets: [0.001, 0.01, 0.1, 1, 5, 10, 20, 40, 60, +Infinity]
+    labelsToReport: []
   maxInboundMessageSizeBytes: 0
   maxInboundMetadataSize: 0
   casWriteTimeout: 3600
@@ -22,6 +24,7 @@ server:
   dispatchedMonitorIntervalSeconds: 1
   runOperationQueuer: true
   ensureOutputsPresent: false
+  runFailsafeOperation: true
   maxCpu: 0
   maxRequeueAttempts: 5
   useDenyList: true
@@ -30,6 +33,7 @@ server:
   recordBesEvents: false
   clusterId: local
   cloudRegion: us-east-1
+  gracefulShutdownSeconds: 0
   caches:
     directoryCacheMaxEntries: 10000
     commandCacheMaxEntries: 10000
@@ -38,7 +42,6 @@ server:
   admin:
     deploymentEnvironment: AWS
     clusterEndpoint: "grpc://localhost"
-    enableGracefulShutdown: false
   metrics:
     publisher: LOG
     logLevel: FINEST
@@ -71,8 +74,6 @@ backplane:
   operationChannelPrefix: "OperationChannel"
   casPrefix: "ContentAddressableStorage"
   casExpire: 604800 # 1 week
-  subscribeToBackplane: true
-  runFailsafeOperation: true
   maxQueueDepth: 100000
   maxPreQueueDepth: 1000000
   priorityQueue: false
@@ -80,6 +81,11 @@ backplane:
   timeout: 10000
   maxAttempts: 20
   cacheCas: false
+  casMetrics:
+    enabled: true
+    casReadCountSetName: "CasReadCount"
+    casReadCountWindow: 14400 # 4 hours
+    casReadCountUpdateInterval: 900 # 15 mins
   queues:
     - name: "cpu"
       allowUnmatched: true
@@ -102,7 +108,6 @@ worker:
   inlineContentLimit: 1048567 # 1024 * 1024
   operationPollPeriod: 1
   dequeueMatchSettings:
-    acceptEverything: true
     allowUnmatched: false
   storages:
     - type: FILESYSTEM
@@ -112,24 +117,29 @@ worker:
       skipLoad: false
       hexBucketLevels: 0
       execRootCopyFallback: false
-      target:
-      publishTtlMetric: false
+    #- type: GRPC
+    #  target: "grpc://host:port"
   executeStageWidth: 1
   inputFetchStageWidth: 1
   inputFetchDeadline: 60
   linkInputDirectories: true
-  realInputDirectories:
-    - "external"
+  linkedInputDirectories:
+    - "(?!external)[^/]+"
   execOwner:
   defaultMaxCores: 0
   limitGlobalExecution: false
   onlyMulticoreTests: false
   allowBringYourOwnContainer: false
   errorOperationRemainingResources: false
+  errorOperationOutputSizeExceeded: false
+  gracefulShutdownSeconds: 0
   sandboxSettings:
-    alwaysUse: false
+    alwaysUseSandbox: false
+    alwaysUseCgroups: false
+    alwaysUseTmpFs: false
     selectForBlockNetwork: false
     selectForTmpFs: false
+  createSymlinkOutputs: false
   executionPolicies:
     - name: test
       executionWrapper:

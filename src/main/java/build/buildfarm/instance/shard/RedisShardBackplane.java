@@ -129,6 +129,8 @@ public class RedisShardBackplane implements Backplane {
                   .build());
 
   private final String source; // used in operation change publication
+  private final boolean subscribeToBackplane;
+  private final boolean runFailsafeOperation;
   private final Function<Operation, Operation> onPublish;
   private final Function<Operation, Operation> onComplete;
   private final Supplier<JedisCluster> jedisClusterFactory;
@@ -149,18 +151,30 @@ public class RedisShardBackplane implements Backplane {
 
   public RedisShardBackplane(
       String source,
+      boolean subscribeToBackplane,
+      boolean runFailsafeOperation,
       Function<Operation, Operation> onPublish,
       Function<Operation, Operation> onComplete)
       throws ConfigurationException {
-    this(source, onPublish, onComplete, JedisClusterFactory.create(source));
+    this(
+        source,
+        subscribeToBackplane,
+        runFailsafeOperation,
+        onPublish,
+        onComplete,
+        JedisClusterFactory.create(source));
   }
 
   public RedisShardBackplane(
       String source,
+      boolean subscribeToBackplane,
+      boolean runFailsafeOperation,
       Function<Operation, Operation> onPublish,
       Function<Operation, Operation> onComplete,
       Supplier<JedisCluster> jedisClusterFactory) {
     this.source = source;
+    this.subscribeToBackplane = subscribeToBackplane;
+    this.runFailsafeOperation = runFailsafeOperation;
     this.onPublish = onPublish;
     this.onComplete = onComplete;
     this.jedisClusterFactory = jedisClusterFactory;
@@ -519,10 +533,10 @@ public class RedisShardBackplane implements Backplane {
     // Create containers that make up the backplane
     state = DistributedStateCreator.create(client);
 
-    if (configs.getBackplane().isSubscribeToBackplane()) {
+    if (subscribeToBackplane) {
       startSubscriptionThread();
     }
-    if (configs.getBackplane().isRunFailsafeOperation()) {
+    if (runFailsafeOperation) {
       startFailsafeOperationThread();
     }
 
@@ -634,7 +648,7 @@ public class RedisShardBackplane implements Backplane {
             .setRemove(WorkerChange.Remove.newBuilder().setSource(source).setReason(reason).build())
             .build();
     String workerChangeJson = JsonFormat.printer().print(workerChange);
-    return subscriber.removeWorker(name)
+    return storageWorkerSet.remove(name)
         && client.call(
             jedis -> removeWorkerAndPublish(jedis, name, workerChangeJson, /* storage=*/ true));
   }
@@ -930,6 +944,25 @@ public class RedisShardBackplane implements Backplane {
   public Map<Digest, Set<String>> getBlobDigestsWorkers(Iterable<Digest> blobDigests)
       throws IOException {
     return state.casWorkerMap.getMap(client, blobDigests);
+  }
+
+  @Override
+  public Map<String, Integer> updateCasReadCount(
+      Stream<Map.Entry<Digest, Integer>> casReadCountStream) throws IOException {
+    return client.call(
+        jedis ->
+            state.casReadCount.incrementMembersScore(
+                jedis,
+                casReadCountStream.map(
+                    entry ->
+                        new AbstractMap.SimpleEntry<>(
+                            entry.getKey().getHash(), entry.getValue()))));
+  }
+
+  @Override
+  public int removeCasReadCountEntries(Stream<Digest> digestsToBeRemoved) throws IOException {
+    return client.call(
+        jedis -> state.casReadCount.removeMembers(jedis, digestsToBeRemoved.map(Digest::getHash)));
   }
 
   public static WorkerChange parseWorkerChange(String workerChangeJson)
@@ -1486,5 +1519,10 @@ public class RedisShardBackplane implements Backplane {
       }
     }
     return GetClientStartTimeResult.newBuilder().addAllClientStartTime(startTimes).build();
+  }
+
+  @Override
+  public void updateDigestsExpiry(Iterable<Digest> digests) throws IOException {
+    state.casWorkerMap.setExpire(client, digests);
   }
 }

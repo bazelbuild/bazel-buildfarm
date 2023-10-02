@@ -24,6 +24,7 @@ import build.buildfarm.common.redis.RedisHashMap;
 import build.buildfarm.common.redis.RedisHashtags;
 import build.buildfarm.common.redis.RedisMap;
 import build.buildfarm.common.redis.RedisNodeHashes;
+import build.buildfarm.common.redis.RedisSortedSet;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.SetMultimap;
@@ -58,6 +59,7 @@ public class DistributedStateCreator {
         new RedisHashMap(configs.getBackplane().getWorkersHashName() + "_execute");
     state.storageWorkers =
         new RedisHashMap(configs.getBackplane().getWorkersHashName() + "_storage");
+    state.casReadCount = new RedisSortedSet(configs.getBackplane().getCasMetrics().getCasReadCountSetName());
 
     return state;
   }

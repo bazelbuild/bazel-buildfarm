@@ -41,8 +41,10 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -53,12 +55,14 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import redis.clients.jedis.JedisCluster;
+import redis.clients.jedis.JedisClusterPipeline;
+import redis.clients.jedis.Response;
 
 @RunWith(JUnit4.class)
 public class RedisShardBackplaneTest {
-  private RedisShardBackplane backplane;
   private BuildfarmConfigs configs = BuildfarmConfigs.getInstance();
 
   @Mock Supplier<JedisCluster> mockJedisClusterFactory;
@@ -66,10 +70,18 @@ public class RedisShardBackplaneTest {
   @Before
   public void setUp() throws IOException {
     configs.getBackplane().setOperationExpire(10);
-    configs.getBackplane().setSubscribeToBackplane(false);
-    configs.getBackplane().setRunFailsafeOperation(false);
     configs.getBackplane().setQueues(new Queue[] {});
     MockitoAnnotations.initMocks(this);
+  }
+
+  public RedisShardBackplane createBackplane(String name) {
+    return new RedisShardBackplane(
+        name,
+        /* subscribeToBackplane=*/ false,
+        /* runFailsafeOperation=*/ false,
+        o -> o,
+        o -> o,
+        mockJedisClusterFactory);
   }
 
   @Test
@@ -80,9 +92,7 @@ public class RedisShardBackplaneTest {
         .thenReturn(ImmutableMap.of("foo", "foo"));
     when(jedisCluster.hdel(configs.getBackplane().getWorkersHashName() + "_storage", "foo"))
         .thenReturn(1L);
-    backplane =
-        new RedisShardBackplane(
-            "invalid-protobuf-worker-removed-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("invalid-protobuf-worker-removed-test");
     backplane.start("startTime/test:0000");
 
     assertThat(backplane.getStorageWorkers()).isEmpty();
@@ -99,12 +109,10 @@ public class RedisShardBackplaneTest {
     assertThat(workerChange.getTypeCase()).isEqualTo(WorkerChange.TypeCase.REMOVE);
   }
 
-  void verifyChangePublished(JedisCluster jedis) throws IOException {
+  OperationChange verifyChangePublished(String channel, JedisCluster jedis) throws IOException {
     ArgumentCaptor<String> changeCaptor = ArgumentCaptor.forClass(String.class);
-    verify(jedis, times(1)).publish(eq(backplane.operationChannel("op")), changeCaptor.capture());
-    OperationChange opChange = parseOperationChange(changeCaptor.getValue());
-    assertThat(opChange.hasReset()).isTrue();
-    assertThat(opChange.getReset().getOperation().getName()).isEqualTo("op");
+    verify(jedis, times(1)).publish(eq(channel), changeCaptor.capture());
+    return parseOperationChange(changeCaptor.getValue());
   }
 
   String operationName(String name) {
@@ -115,9 +123,7 @@ public class RedisShardBackplaneTest {
   public void prequeueUpdatesOperationPrequeuesAndPublishes() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "prequeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("prequeue-operation-test");
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -135,32 +141,34 @@ public class RedisShardBackplaneTest {
         .lpush(
             configs.getBackplane().getPreQueuedOperationsListName(),
             JsonFormat.printer().print(executeEntry));
-    verifyChangePublished(jedisCluster);
+    OperationChange opChange =
+        verifyChangePublished(backplane.operationChannel(opName), jedisCluster);
+    assertThat(opChange.hasReset()).isTrue();
+    assertThat(opChange.getReset().getOperation().getName()).isEqualTo(opName);
   }
 
   @Test
   public void queuingPublishes() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("requeue-operation-test");
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
     backplane.queueing(opName);
 
     verify(mockJedisClusterFactory, times(1)).get();
-    verifyChangePublished(jedisCluster);
+    OperationChange opChange =
+        verifyChangePublished(backplane.operationChannel(opName), jedisCluster);
+    assertThat(opChange.hasReset()).isTrue();
+    assertThat(opChange.getReset().getOperation().getName()).isEqualTo(opName);
   }
 
   @Test
   public void requeueDispatchedOperationQueuesAndPublishes() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("requeue-operation-test");
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -180,7 +188,10 @@ public class RedisShardBackplaneTest {
         .lpush(
             configs.getBackplane().getQueuedOperationsListName(),
             JsonFormat.printer().print(queueEntry));
-    verifyChangePublished(jedisCluster);
+    OperationChange opChange =
+        verifyChangePublished(backplane.operationChannel(opName), jedisCluster);
+    assertThat(opChange.hasReset()).isTrue();
+    assertThat(opChange.getReset().getOperation().getName()).isEqualTo(opName);
   }
 
   @Test
@@ -194,9 +205,7 @@ public class RedisShardBackplaneTest {
     // create a backplane
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("requeue-operation-test");
     backplane.start("startTime/test:0000");
 
     // ARRANGE
@@ -209,8 +218,7 @@ public class RedisShardBackplaneTest {
             .setRequeueAttempts(STARTING_REQUEUE_AMOUNT)
             .build();
     String queueEntryJson = JsonFormat.printer().print(queueEntry);
-    when(jedisCluster.brpoplpush(any(String.class), any(String.class), any(Integer.class)))
-        .thenReturn(queueEntryJson);
+    when(jedisCluster.rpoplpush(any(String.class), any(String.class))).thenReturn(queueEntryJson);
 
     // PRE-ASSERT
     when(jedisCluster.hsetnx(any(String.class), any(String.class), any(String.class)))
@@ -250,9 +258,7 @@ public class RedisShardBackplaneTest {
     // create a backplane
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "requeue-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("requeue-operation-test");
     backplane.start("startTime/test:0000");
 
     // Assume the operation queue is already populated from a first re-queue.
@@ -264,8 +270,7 @@ public class RedisShardBackplaneTest {
             .setRequeueAttempts(STARTING_REQUEUE_AMOUNT)
             .build();
     String queueEntryJson = JsonFormat.printer().print(queueEntry);
-    when(jedisCluster.brpoplpush(any(String.class), any(String.class), any(Integer.class)))
-        .thenReturn(queueEntryJson);
+    when(jedisCluster.rpoplpush(any(String.class), any(String.class))).thenReturn(queueEntryJson);
 
     // PRE-ASSERT
     when(jedisCluster.hsetnx(any(String.class), any(String.class), any(String.class)))
@@ -298,9 +303,7 @@ public class RedisShardBackplaneTest {
   public void completeOperationUndispatches() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "complete-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("complete-operation-test");
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -317,9 +320,7 @@ public class RedisShardBackplaneTest {
   public void deleteOperationDeletesAndPublishes() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "delete-operation-test", (o) -> o, (o) -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("delete-operation-test");
     backplane.start("startTime/test:0000");
 
     final String opName = "op";
@@ -330,7 +331,10 @@ public class RedisShardBackplaneTest {
     verify(jedisCluster, times(1))
         .hdel(configs.getBackplane().getDispatchedOperationsHashName(), opName);
     verify(jedisCluster, times(1)).del(operationName(opName));
-    verifyChangePublished(jedisCluster);
+    OperationChange opChange =
+        verifyChangePublished(backplane.operationChannel(opName), jedisCluster);
+    assertThat(opChange.hasReset()).isTrue();
+    assertThat(opChange.getReset().getOperation().getName()).isEqualTo(opName);
   }
 
   @Test
@@ -341,9 +345,7 @@ public class RedisShardBackplaneTest {
         configs.getBackplane().getInvocationBlacklistPrefix() + ":" + toolInvocationId;
     when(jedisCluster.exists(invocationBlacklistKey)).thenReturn(true);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane(
-            "invocation-blacklist-test", o -> o, o -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("invocation-blacklist-test");
     backplane.start("startTime/test:0000");
 
     assertThat(
@@ -361,8 +363,7 @@ public class RedisShardBackplaneTest {
   public void testGetWorkersStartTime() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane("workers-starttime-test", o -> o, o -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("workers-starttime-test");
     backplane.start("startTime/test:0000");
 
     Set<String> workerNames = ImmutableSet.of("worker1", "worker2", "missing_worker");
@@ -386,8 +387,7 @@ public class RedisShardBackplaneTest {
   public void getDigestInsertTime() throws IOException {
     JedisCluster jedisCluster = mock(JedisCluster.class);
     when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
-    backplane =
-        new RedisShardBackplane("digest-inserttime-test", o -> o, o -> o, mockJedisClusterFactory);
+    RedisShardBackplane backplane = createBackplane("digest-inserttime-test");
     backplane.start("startTime/test:0000");
     long ttl = 3600L;
     long expirationInSecs = configs.getBackplane().getCasExpire();
@@ -402,5 +402,64 @@ public class RedisShardBackplaneTest {
     assertThat(insertTimeInSecs)
         .isGreaterThan(Instant.now().getEpochSecond() - expirationInSecs + ttl - 2);
     assertThat(insertTimeInSecs).isAtMost(Instant.now().getEpochSecond() - expirationInSecs + ttl);
+  }
+
+  @Test
+  public void testUpdateCasReadCount() throws IOException {
+    JedisCluster jedisCluster = mock(JedisCluster.class);
+    JedisClusterPipeline pipeline = mock(JedisClusterPipeline.class);
+    when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
+    when(jedisCluster.pipelined()).thenReturn(pipeline);
+    RedisShardBackplane backplane = createBackplane("cas-readcount-test");
+    backplane.start("startTime/test:0000");
+
+    Map<Digest, Integer> digestsAndReadCount = getDigestsAndReadCountMap(10);
+
+    digestsAndReadCount.forEach(
+        (digest, readCount) -> {
+          Response<Double> mockResponse = Mockito.mock(Response.class);
+          when(mockResponse.get()).thenReturn(readCount.doubleValue());
+          when(pipeline.zincrby("CasReadCount", readCount, digest.getHash()))
+              .thenReturn(mockResponse);
+        });
+
+    Map<String, Integer> actualReadCount =
+        backplane.updateCasReadCount(digestsAndReadCount.entrySet().stream());
+
+    digestsAndReadCount.forEach(
+        (digest, expectedReadCount) -> {
+          assertThat(actualReadCount.get(digest.getHash())).isEqualTo(expectedReadCount);
+        });
+  }
+
+  @Test
+  public void testRemoveCasReadCountEntries() throws IOException {
+    JedisCluster jedisCluster = mock(JedisCluster.class);
+    when(mockJedisClusterFactory.get()).thenReturn(jedisCluster);
+    RedisShardBackplane backplane = createBackplane("cas-readcount-test");
+    backplane.start("startTime/test:0000");
+
+    List<Digest> digests = new ArrayList<>();
+    List<String> digestHashes = new ArrayList<>();
+    int numberOfDigestsToBeRemoved = 10;
+    for (int i = 0; i < numberOfDigestsToBeRemoved; i++) {
+      digestHashes.add(UUID.randomUUID().toString());
+      digests.add(Digest.newBuilder().setHash(digestHashes.get(i)).build());
+    }
+
+    when(jedisCluster.zrem(eq("CasReadCount"), any()))
+        .thenReturn((long) numberOfDigestsToBeRemoved);
+    assertThat(backplane.removeCasReadCountEntries(digests.stream()))
+        .isEqualTo(numberOfDigestsToBeRemoved);
+  }
+
+  private Map<Digest, Integer> getDigestsAndReadCountMap(int size) {
+    Random random = new Random();
+    Map<Digest, Integer> digestsAndReadCount = new HashMap<>();
+    while (size-- > 0) {
+      digestsAndReadCount.put(
+          Digest.newBuilder().setHash(UUID.randomUUID().toString()).build(), random.nextInt(100));
+    }
+    return digestsAndReadCount;
   }
 }
