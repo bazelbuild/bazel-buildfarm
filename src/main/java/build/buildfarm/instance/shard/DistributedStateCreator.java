@@ -59,7 +59,8 @@ public class DistributedStateCreator {
         new RedisHashMap(configs.getBackplane().getWorkersHashName() + "_execute");
     state.storageWorkers =
         new RedisHashMap(configs.getBackplane().getWorkersHashName() + "_storage");
-    state.casReadCount = new RedisSortedSet(configs.getBackplane().getCasMetrics().getCasReadCountSetName());
+    state.casReadCount =
+        new RedisSortedSet(configs.getBackplane().getCasMetrics().getCasReadCountSetName());
 
     return state;
   }

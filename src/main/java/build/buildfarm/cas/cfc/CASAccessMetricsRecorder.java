@@ -26,7 +26,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
-
 import lombok.SneakyThrows;
 import lombok.extern.java.Log;
 
@@ -84,8 +83,12 @@ public final class CASAccessMetricsRecorder {
     if (!running) {
       throw new IllegalStateException("Metrics Recorder is not running");
     }
-    runWithLock(lock.readLock(),
-        () -> currentIntervalReadCount.computeIfAbsent(digest, d -> new AtomicInteger(0)).incrementAndGet());
+    runWithLock(
+        lock.readLock(),
+        () ->
+            currentIntervalReadCount
+                .computeIfAbsent(digest, d -> new AtomicInteger(0))
+                .incrementAndGet());
   }
 
   /**
@@ -98,7 +101,8 @@ public final class CASAccessMetricsRecorder {
     if (!running) {
       throw new IllegalStateException("Metrics Recorder is not running");
     }
-    runWithLock(lock.readLock(), () -> currentIntervalReadCount.putIfAbsent(digest, new AtomicInteger(0)));
+    runWithLock(
+        lock.readLock(), () -> currentIntervalReadCount.putIfAbsent(digest, new AtomicInteger(0)));
   }
 
   /**
@@ -142,7 +146,8 @@ public final class CASAccessMetricsRecorder {
   private void updateReadCount() {
     Stopwatch stopwatch = Stopwatch.createStarted();
     // Ensure all threads writes to new interval.
-    Map<Digest, AtomicInteger> lastIntervalReadCount = callWithLock(lock.writeLock(), this::createNewReadCountInterval);
+    Map<Digest, AtomicInteger> lastIntervalReadCount =
+        callWithLock(lock.writeLock(), this::createNewReadCountInterval);
     readIntervalCountQueue.offer(lastIntervalReadCount);
 
     Map<Digest, Integer> effectiveReadCount = new HashMap<>();
@@ -182,7 +187,8 @@ public final class CASAccessMetricsRecorder {
           Integer totalReadCount = casReadCount.get(digest.getHash());
           if (totalReadCount != null && totalReadCount == 0) {
             digestsToExpire.add(digest);
-            // If the readCount is 0 within an interval, it indicates that the entry was written during
+            // If the readCount is 0 within an interval, it indicates that the entry was written
+            // during
             // that interval but remained unread.
             if (readCount.get() == 0) {
               log.info(

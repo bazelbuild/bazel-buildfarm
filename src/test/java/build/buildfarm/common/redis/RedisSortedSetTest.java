@@ -7,7 +7,6 @@ import build.buildfarm.instance.shard.JedisClusterFactory;
 import java.io.IOException;
 import java.util.Map;
 import java.util.stream.Stream;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

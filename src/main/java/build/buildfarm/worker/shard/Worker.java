@@ -641,8 +641,10 @@ public final class Worker extends LoggingMain {
       casAccessMetricsRecorder =
           new CASAccessMetricsRecorder(
               backplane,
-              java.time.Duration.ofSeconds(configs.getBackplane().getCasMetrics().getCasReadCountWindow()),
-              java.time.Duration.ofSeconds(configs.getBackplane().getCasMetrics().getCasReadCountUpdateInterval()));
+              java.time.Duration.ofSeconds(
+                  configs.getBackplane().getCasMetrics().getCasReadCountWindow()),
+              java.time.Duration.ofSeconds(
+                  configs.getBackplane().getCasMetrics().getCasReadCountUpdateInterval()));
       casAccessMetricsRecorder.start();
     }
 
