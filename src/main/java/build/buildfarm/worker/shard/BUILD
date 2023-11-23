@@ -6,6 +6,7 @@ java_library(
     deps = [
         "//persistentworkers/src/main/java/persistent/bazel:bazel-persistent-workers",
         "//persistentworkers/src/main/java/persistent/common:persistent-common",
+        "//src/main/java/build/buildfarm/backplane",
         "//src/main/java/build/buildfarm/cas",
         "//src/main/java/build/buildfarm/common",
         "//src/main/java/build/buildfarm/common/config",
@@ -25,6 +26,9 @@ java_library(
         "@maven//:com_github_jnr_jnr_constants",
         "@maven//:com_github_jnr_jnr_ffi",
         "@maven//:com_github_jnr_jnr_posix",
+        "@io_grpc_grpc_proto//:health_java_proto",
+        "@io_grpc_grpc_proto//:health_proto",
+        "@maven//:com_github_ben_manes_caffeine_caffeine",
         "@maven//:com_github_pcj_google_options",
         "@maven//:com_github_serceman_jnr_fuse",
         "@maven//:com_google_code_findbugs_jsr305",
