@@ -62,7 +62,10 @@ public class DequeueMatchEvaluatorTest {
     QueueEntry entry = QueueEntry.newBuilder().setPlatform(Platform.newBuilder()).build();
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     assertThat(shouldKeep).isTrue();
@@ -89,7 +92,10 @@ public class DequeueMatchEvaluatorTest {
             .build();
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, minCoresEntry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker accepts because it has more cores than the min-cores requested
@@ -103,7 +109,7 @@ public class DequeueMatchEvaluatorTest {
             .build();
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, coresEntry);
+    shouldKeep = shouldKeepOperation(workerProvisions, "worker-name", resourceSet, coresEntry);
 
     // ASSERT
     // the worker accepts because it has more cores than the min-cores requested
@@ -145,7 +151,10 @@ public class DequeueMatchEvaluatorTest {
             .build();
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, coresEntry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker rejects because it has less cores than the min-cores requested
@@ -172,7 +181,10 @@ public class DequeueMatchEvaluatorTest {
             .build();
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, minCoresEntry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker accepts because it has the same cores as the min-cores requested
@@ -215,16 +227,34 @@ public class DequeueMatchEvaluatorTest {
             .build();
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     assertThat(shouldKeep).isFalse();
 
     // ARRANGE
+    configs.getWorker().getDequeueMatchSettings().setAcceptEverything(true);
+
+    // ACT
+    shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
+
+    // ASSERT
+    assertThat(shouldKeep).isTrue();
+
+    // ARRANGE
     configs.getWorker().getDequeueMatchSettings().setAllowUnmatched(true);
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     assertThat(shouldKeep).isTrue();
@@ -253,7 +283,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("FOO").availablePermits()).isEqualTo(1);
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker accepts because the resource is available.
@@ -261,7 +294,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("FOO").availablePermits()).isEqualTo(0);
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker rejects because there are no resources left.
@@ -328,7 +364,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("BAR").availablePermits()).isEqualTo(4);
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker accepts because the resource is available.
@@ -337,7 +376,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("BAR").availablePermits()).isEqualTo(2);
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker accepts because the resource is available.
@@ -346,7 +388,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("BAR").availablePermits()).isEqualTo(0);
 
     // ACT
-    shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker rejects because there are no resources left.
@@ -387,7 +432,10 @@ public class DequeueMatchEvaluatorTest {
     assertThat(resourceSet.resources.get("BAZ").availablePermits()).isEqualTo(200);
 
     // ACT
-    boolean shouldKeep = shouldKeepOperation(workerProvisions, resourceSet, entry);
+    boolean shouldKeep =
+        DequeueMatchEvaluator.shouldKeepOperation(
+                workerProvisions, "worker-name", resourceSet, entry)
+            .keep;
 
     // ASSERT
     // the worker rejects because there are no resources left.

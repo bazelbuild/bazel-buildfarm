@@ -55,11 +55,17 @@ public class DequeueMatchEvaluator {
    */
   @SuppressWarnings("NullableProblems")
   @NotNull
-  public static boolean shouldKeepOperation(
+  public static DequeueResults shouldKeepOperation(
       SetMultimap<String, String> workerProvisions,
+      String name,
       LocalResourceSet resourceSet,
       QueueEntry queueEntry) {
-    return shouldKeepViaPlatform(workerProvisions, resourceSet, queueEntry.getPlatform());
+    if (queueEntry == null) {
+      DequeueResults results = new DequeueResults();
+      results.keep = true;
+      return results;
+    }
+    return shouldKeepViaPlatform(workerProvisions, name, resourceSet, queueEntry.getPlatform());
   }
 
   /**
@@ -76,12 +82,41 @@ public class DequeueMatchEvaluator {
    */
   @SuppressWarnings("NullableProblems")
   @NotNull
-  private static boolean shouldKeepViaPlatform(
+  private static DequeueResults shouldKeepViaPlatform(
       SetMultimap<String, String> workerProvisions,
+      String name,
       LocalResourceSet resourceSet,
       Platform platform) {
-    return satisfiesProperties(workerProvisions, platform)
-        && LocalResourceSetUtils.claimResources(platform, resourceSet);
+    // attempt to execute everything the worker gets off the queue,
+    // provided there is enough resources to do so.
+    DequeueResults results = new DequeueResults();
+
+    if (!LocalResourceSetUtils.claimResources(platform, resourceSet)) {
+      return results;
+    }
+    results.resourcesClaimed = true;
+
+    // The action might be requesting to run on a particular action
+    if (!requestingThisWorker(platform, name)) {
+      return results;
+    }
+
+    if (configs.getWorker().getDequeueMatchSettings().isAcceptEverything()) {
+      results.keep = true;
+      return results;
+    }
+
+    results.keep = satisfiesProperties(workerProvisions, platform);
+    return results;
+  }
+
+  private static boolean requestingThisWorker(Platform platform, String name) {
+    for (Platform.Property property : platform.getPropertiesList()) {
+      if (property.getName().equals(ExecutionProperties.WORKER) && property.getValue() != name) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**

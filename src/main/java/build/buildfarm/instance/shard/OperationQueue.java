@@ -15,6 +15,7 @@
 package build.buildfarm.instance.shard;
 
 import build.bazel.remote.execution.v2.Platform;
+import build.buildfarm.common.BuildfarmExecutors;
 import build.buildfarm.common.StringVisitor;
 import build.buildfarm.common.redis.BalancedRedisQueue;
 import build.buildfarm.common.redis.ProvisionedRedisQueue;
@@ -24,7 +25,11 @@ import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.SetMultimap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import redis.clients.jedis.JedisCluster;
 
 /**
@@ -41,6 +46,12 @@ public class OperationQueue {
    *     infinitely sized queues, use -1.
    */
   private final int maxQueueSize;
+
+  // threads that each target a specific queue and block on dequeuing.
+  ExecutorService dequeueService;
+
+  // This is used for dequeueing threads to put operations and for workers to wait on.
+  BlockingQueue<String> dequeued = new ArrayBlockingQueue<>(1);
 
   /**
    * @field queues
@@ -76,6 +87,28 @@ public class OperationQueue {
   public OperationQueue(List<ProvisionedRedisQueue> queues, int maxQueueSize) {
     this.queues = queues;
     this.maxQueueSize = maxQueueSize;
+  }
+
+  public void startDequeuePool(JedisCluster jedis) {
+    List<BalancedRedisQueue> queues = chooseAllQueues();
+    dequeueService = BuildfarmExecutors.getOperationDequeuePool(queues.size());
+
+    // Spawn a thread to block on each queue.
+    IntStream.range(0, queues.size())
+        .forEach(
+            index ->
+                dequeueService.execute(
+                    () -> {
+                      while (true) {
+                        try {
+                          String value = queues.get(index).dequeue(jedis);
+                          if (value != null) {
+                            dequeued.put(value);
+                          }
+                        } catch (Exception e) {
+                        }
+                      }
+                    }));
   }
 
   /**
@@ -291,6 +324,12 @@ public class OperationQueue {
 
     throwNoEligibleQueueException(provisions);
     return null;
+  }
+
+  private List<BalancedRedisQueue> chooseAllQueues() {
+    return queues.stream()
+        .map(provisionedQueue -> provisionedQueue.queue())
+        .collect(Collectors.toList());
   }
 
   /**

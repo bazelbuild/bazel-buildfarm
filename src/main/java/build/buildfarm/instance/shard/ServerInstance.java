@@ -428,7 +428,6 @@ public class ServerInstance extends NodeInstance {
                           @Override
                           public void onSuccess(Void result) {
                             log.log(Level.FINER, "successfully queued " + operationName);
-                            // nothing
                           }
 
                           @Override
@@ -1855,7 +1854,7 @@ public class ServerInstance extends NodeInstance {
 
           @Override
           public void onFailure(Throwable t) {
-            requeueFailureCounter.inc();
+            requeueFailureCounter.inc();	
             log.log(Level.SEVERE, "failed to requeue: " + operationName, t);
             com.google.rpc.Status status = StatusProto.fromThrowable(t);
             if (status == null) {
@@ -2486,6 +2485,7 @@ public class ServerInstance extends NodeInstance {
 
           @Override
           public void onFailure(Throwable t) {
+            queueFailureCounter.inc();
             poller.pause();
             com.google.rpc.Status status = StatusProto.fromThrowable(t);
             if (status == null) {

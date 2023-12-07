@@ -529,7 +529,11 @@ public class RedisShardBackplane implements Backplane {
     // Construct a single redis client to be used throughout the entire backplane.
     // We wish to avoid various synchronous and error handling issues that could occur when using
     // multiple clients.
-    client = new RedisClient(jedisClusterFactory.get());
+    client =
+        new RedisClient(
+            jedisClusterFactory.get(),
+            jedisClusterFactory,
+            configs.getBackplane().isReconnectClient());
     // Create containers that make up the backplane
     state = DistributedStateCreator.create(client);
 
@@ -1046,6 +1050,15 @@ public class RedisShardBackplane implements Backplane {
       log.log(Level.WARNING, format("removed dispatched operation %s", operationName));
     }
     state.operationQueue.push(jedis, provisions, queueEntryJson, priority);
+  }
+
+  // call this for workers only
+  @Override
+  public void startDequeuePool() throws IOException {
+    client.run(
+        jedis -> {
+          state.operationQueue.startDequeuePool(jedis);
+        });
   }
 
   @SuppressWarnings("ConstantConditions")

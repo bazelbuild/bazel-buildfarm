@@ -375,4 +375,21 @@ public class RedisPriorityQueueTest {
       assertThat(visited.contains("foo" + i)).isTrue();
     }
   }
+
+  // Function under test: dequeue
+  // Reason for testing: Test timeout functionality
+  // Failure explanation:
+  @Test
+  public void dequeueTimeout() throws Exception {
+    // ARRANGE
+    RedisPriorityQueue queue = new RedisPriorityQueue("test");
+
+    Instant start = Instant.now();
+    String val = queue.dequeue(redis, 1);
+    Instant finish = Instant.now();
+
+    long timeElasped = Duration.between(start, finish).toMillis();
+    assertThat(timeElasped).isGreaterThan((long) 1000);
+    assertThat(val).isEqualTo(null);
+  }
 }

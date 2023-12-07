@@ -548,6 +548,7 @@ public final class Worker extends LoggingMain {
               this::stripOperation,
               this::stripQueuedOperation);
       backplane.start(configs.getWorker().getPublicName());
+      backplane.startDequeuePool();
     } else {
       throw new IllegalArgumentException("Shard Backplane not set in config");
     }
@@ -621,16 +622,28 @@ public final class Worker extends LoggingMain {
     removeWorker(configs.getWorker().getPublicName());
 
     boolean skipLoad = configs.getWorker().getStorages().get(0).isSkipLoad();
+    log.log(Level.INFO, "Starting execFileSystem");
     execFileSystem.start(
         (digests) -> addBlobsLocation(digests, configs.getWorker().getPublicName()), skipLoad);
+    log.log(Level.INFO, "Started execFileSystem");
 
+    log.log(Level.INFO, "Starting server");
     server.start();
+    log.log(Level.INFO, "Server started");
     healthStatusManager.setStatus(
         HealthStatusManager.SERVICE_NAME_ALL_SERVICES, ServingStatus.SERVING);
-    PrometheusPublisher.startHttpServer(configs.getPrometheusPort());
-    startFailsafeRegistration();
 
+    log.log(Level.INFO, "Start prometheus http server");
+    PrometheusPublisher.startHttpServer(configs.getPrometheusPort());
+    log.log(Level.INFO, "Started prometheus http server");
+
+    log.log(Level.INFO, "Starting fail safe registration");
+    startFailsafeRegistration();
+    log.log(Level.INFO, "Started fail safe registration");
+
+    log.log(Level.INFO, "Starting pipeline");
     pipeline.start();
+    log.log(Level.INFO, "Piepline started");
     healthCheckMetric.labels("start").inc();
     executionSlotsTotal.set(configs.getWorker().getExecuteStageWidth());
     inputFetchSlotsTotal.set(configs.getWorker().getInputFetchStageWidth());

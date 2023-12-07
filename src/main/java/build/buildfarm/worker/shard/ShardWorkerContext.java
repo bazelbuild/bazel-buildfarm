@@ -56,6 +56,8 @@ import build.buildfarm.instance.MatchListener;
 import build.buildfarm.v1test.CASInsertionPolicy;
 import build.buildfarm.v1test.QueueEntry;
 import build.buildfarm.v1test.QueuedOperation;
+import build.buildfarm.worker.DequeueMatchEvaluator;
+import build.buildfarm.worker.DequeueResults;
 import build.buildfarm.worker.ExecutionPolicies;
 import build.buildfarm.worker.RetryingMatchListener;
 import build.buildfarm.worker.WorkerContext;
@@ -319,6 +321,23 @@ class ShardWorkerContext implements WorkerContext {
     return queueEntry;
   }
 
+  private void decideWhetherToKeepOperation(QueueEntry queueEntry, MatchListener listener)
+      throws IOException, InterruptedException {
+    DequeueResults results =
+        DequeueMatchEvaluator.shouldKeepOperation(matchProvisions, name, resourceSet, queueEntry);
+    if (results.keep) {
+      listener.onEntry(queueEntry);
+    } else {
+      if (results.resourcesClaimed) {
+        returnLocalResources(queueEntry);
+      }
+      backplane.rejectOperation(queueEntry);
+    }
+    if (Thread.interrupted()) {
+      throw new InterruptedException();
+    }
+  }
+
   @Override
   public void returnLocalResources(QueueEntry queueEntry) {
     LocalResourceSetUtils.releaseClaims(queueEntry.getPlatform(), resourceSet);
@@ -389,6 +408,7 @@ class ShardWorkerContext implements WorkerContext {
 
   private void requeue(String operationName) {
     QueueEntry queueEntry = activeOperations.remove(operationName);
+    returnLocalResources(queueEntry);
     try {
       operationPoller.poll(queueEntry, ExecutionStage.Value.QUEUED, 0);
     } catch (IOException e) {
@@ -402,7 +422,8 @@ class ShardWorkerContext implements WorkerContext {
   }
 
   void deactivate(String operationName) {
-    activeOperations.remove(operationName);
+    QueueEntry queueEntry = activeOperations.remove(operationName);
+    returnLocalResources(queueEntry);
   }
 
   @Override
@@ -979,6 +1000,10 @@ class ShardWorkerContext implements WorkerContext {
       addLinuxSandboxCli(arguments, options);
     }
 
+    if (configs.getWorker().getSandboxSettings().isAlwaysUseAsNobody() || limits.fakeUsername) {
+      arguments.add(configs.getExecutionWrappers().getAsNobody());
+    }
+
     if (limits.time.skipSleep) {
       arguments.add(configs.getExecutionWrappers().getSkipSleep());
 
@@ -1017,13 +1042,11 @@ class ShardWorkerContext implements WorkerContext {
     // TODO: provide proper support for bazel sandbox's fakeUsername "-U" flag.
     // options.fakeUsername = limits.fakeUsername;
 
-    // these were hardcoded in bazel based on a filesystem configuration typical to ours
-    // TODO: they may be incorrect for say Windows, and support will need adjusted in the future.
-    options.writableFiles.add("/tmp");
-    options.writableFiles.add("/dev/shm");
+    options.writableFiles.addAll(
+        configs.getWorker().getSandboxSettings().getAdditionalWritePaths());
 
     if (limits.tmpFs) {
-      options.tmpfsDirs.add("/tmp");
+      options.writableFiles.addAll(configs.getWorker().getSandboxSettings().getTmpFsPaths());
     }
 
     if (limits.debugAfterExecution) {
@@ -1043,8 +1066,6 @@ class ShardWorkerContext implements WorkerContext {
 
   private void addLinuxSandboxCli(
       ImmutableList.Builder<String> arguments, LinuxSandboxOptions options) {
-    arguments.add(configs.getExecutionWrappers().getAsNobody());
-
     // Choose the sandbox which is built and deployed with the worker image.
     arguments.add(configs.getExecutionWrappers().getLinuxSandbox());
 
