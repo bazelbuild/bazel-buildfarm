@@ -795,7 +795,7 @@ public class ServerInstance extends NodeInstance {
             .immutableCopy();
     if (!workersToBeRemoved.isEmpty()) {
       try {
-        log.log(Level.INFO, format("adjusting locations for the digest %s", digest));
+        log.log(Level.FINE, format("adjusting locations for the digest %s", digest));
         backplane.adjustBlobLocations(digest, Collections.emptySet(), workersToBeRemoved);
       } catch (IOException e) {
         log.log(
@@ -1655,6 +1655,7 @@ public class ServerInstance extends NodeInstance {
           }
         },
         directExecutor());
+    write.reset(); // prevents a queryWriteStatus at index 0
     try (OutputStream out = write.getOutput(timeout.getSeconds(), SECONDS, () -> {})) {
       content.writeTo(out);
     } catch (IOException e) {

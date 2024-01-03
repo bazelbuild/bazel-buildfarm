@@ -72,6 +72,8 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
   private boolean initialized = false;
   private volatile boolean committed = false;
   private String name = null;
+
+  @GuardedBy("this")
   private Write write = null;
 
   @GuardedBy("this")
@@ -178,19 +180,11 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
         }
         commitActive(committedSize);
       } catch (RuntimeException e) {
-        RequestMetadata requestMetadata = TracingMetadataUtils.fromCurrentContext();
         Status status = Status.fromThrowable(e);
         if (errorResponse(status.asException())) {
-          log.log(
+          logWriteActivity(
               status.getCode() == Status.Code.CANCELLED ? Level.FINER : Level.SEVERE,
-              format(
-                  "%s-%s: %s -> %s -> %s: error committing %s",
-                  requestMetadata.getToolDetails().getToolName(),
-                  requestMetadata.getToolDetails().getToolVersion(),
-                  requestMetadata.getCorrelatedInvocationsId(),
-                  requestMetadata.getToolInvocationId(),
-                  requestMetadata.getActionId(),
-                  name),
+              "committing",
               e);
         }
       }
@@ -240,7 +234,9 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
               @SuppressWarnings("NullableProblems")
               @Override
               public void onFailure(Throwable t) {
-                errorResponse(t);
+                if (errorResponse(t)) {
+                  logWriteActivity("completing", t);
+                }
               }
             },
             withCancellation.fixedContextExecutor(directExecutor()));
@@ -256,6 +252,26 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
         }
       }
     }
+  }
+
+  private void logWriteActivity(String activity, Throwable t) {
+    logWriteActivity(Level.SEVERE, activity, t);
+  }
+
+  private void logWriteActivity(Level level, String activity, Throwable t) {
+    RequestMetadata requestMetadata = TracingMetadataUtils.fromCurrentContext();
+    log.log(
+        level,
+        format(
+            "%s-%s: %s -> %s -> %s: error %s %s",
+            requestMetadata.getToolDetails().getToolName(),
+            requestMetadata.getToolDetails().getToolVersion(),
+            requestMetadata.getCorrelatedInvocationsId(),
+            requestMetadata.getToolInvocationId(),
+            requestMetadata.getActionId(),
+            activity,
+            name),
+        t);
   }
 
   private void logWriteRequest(WriteRequest request, Exception e) {
@@ -326,9 +342,14 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
       throws EntryLimitException {
     long committedSize;
     try {
+      if (offset == 0) {
+        write.reset();
+      }
       committedSize = getCommittedSizeForWrite();
     } catch (IOException e) {
-      errorResponse(e);
+      if (errorResponse(e)) {
+        logWriteActivity("querying", e);
+      }
       return;
     }
     if (offset != 0 && offset > committedSize) {
@@ -352,10 +373,6 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
                       resourceName, name))
               .asException());
     } else {
-      if (offset == 0 && offset != committedSize) {
-        write.reset();
-        committedSize = 0;
-      }
       if (earliestOffset < 0 || offset < earliestOffset) {
         earliestOffset = offset;
       }
@@ -477,7 +494,14 @@ public class WriteStreamObserver implements StreamObserver<WriteRequest> {
   }
 
   @Override
-  public void onCompleted() {
+  public synchronized void onCompleted() {
     log.log(Level.FINER, format("write completed for %s", name));
+    if (write == null) {
+      // we must return with a response lest we emit a grpc warning
+      // there can be no meaningful response at this point, as we
+      // have no idea what the size was
+      responseObserver.onNext(WriteResponse.getDefaultInstance());
+      responseObserver.onCompleted();
+    }
   }
 }

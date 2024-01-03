@@ -9,6 +9,7 @@ java_library(
     deps = [
         "//src/main/java/build/buildfarm/backplane",
         "//src/main/java/build/buildfarm/common",
+        "//src/main/java/build/buildfarm/common:BuildfarmExecutors",
         "//src/main/java/build/buildfarm/common/config",
         "//src/main/java/build/buildfarm/common/grpc",
         "//src/main/java/build/buildfarm/common/resources",
