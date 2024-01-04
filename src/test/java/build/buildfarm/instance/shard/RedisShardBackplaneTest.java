@@ -42,7 +42,6 @@ import com.google.protobuf.util.JsonFormat;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -464,7 +463,7 @@ public class RedisShardBackplaneTest {
     }
     return digestsAndReadCount;
   }
-  
+
   public void testAddWorker() throws IOException {
     ShardWorker shardWorker =
         ShardWorker.newBuilder().setWorkerType(3).setFirstRegisteredAt(1703065913000L).build();
