@@ -454,16 +454,7 @@ public class RedisShardBackplaneTest {
         .isEqualTo(numberOfDigestsToBeRemoved);
   }
 
-  private Map<Digest, Integer> getDigestsAndReadCountMap(int size) {
-    Random random = new Random();
-    Map<Digest, Integer> digestsAndReadCount = new HashMap<>();
-    while (size-- > 0) {
-      digestsAndReadCount.put(
-          Digest.newBuilder().setHash(UUID.randomUUID().toString()).build(), random.nextInt(100));
-    }
-    return digestsAndReadCount;
-  }
-
+  @Test
   public void testAddWorker() throws IOException {
     ShardWorker shardWorker =
         ShardWorker.newBuilder().setWorkerType(3).setFirstRegisteredAt(1703065913000L).build();
@@ -484,5 +475,15 @@ public class RedisShardBackplaneTest {
             "",
             JsonFormat.printer().print(shardWorker));
     verify(jedisCluster, times(1)).publish(anyString(), anyString());
+  }
+
+  private Map<Digest, Integer> getDigestsAndReadCountMap(int size) {
+    Random random = new Random();
+    Map<Digest, Integer> digestsAndReadCount = new HashMap<>();
+    while (size-- > 0) {
+      digestsAndReadCount.put(
+          Digest.newBuilder().setHash(UUID.randomUUID().toString()).build(), random.nextInt(100));
+    }
+    return digestsAndReadCount;
   }
 }
