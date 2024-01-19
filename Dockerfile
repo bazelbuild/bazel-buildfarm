@@ -6,7 +6,8 @@ FROM ubuntu:22.04
 # The "80" is required for config priority but its not specifically important.
 RUN echo 'APT::Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries
 
-RUN apt-get -y update && apt-get -y install \
+RUN DEBIAN_FRONTEND=noninteractive \
+  apt-get -y update && apt-get -y install \
   wget git \
   gcc g++ \
   unzip zip \
