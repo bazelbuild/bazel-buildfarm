@@ -6,8 +6,7 @@ FROM ubuntu:22.04
 # The "80" is required for config priority but its not specifically important.
 RUN echo 'APT::Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries
 
-RUN apt-get update
-RUN apt-get -y install \
+RUN apt-get -y update && apt-get -y install \
   wget git \
   gcc g++ \
   unzip zip \
