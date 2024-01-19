@@ -8,9 +8,10 @@ RUN echo 'APT::Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries
 
 RUN apt-get update
 RUN apt-get -y install \
-  wget git zip \
-  python3 python3-pip python3-dateutil \
+  wget git \
   gcc g++ \
-  openjdk-8-jdk openjdk-17-jdk \
+  unzip zip \
+  python3 python3-pip python3-dateutil \
+  default-jdk \
   redis redis-server
 COPY . buildfarm
