@@ -424,8 +424,7 @@ public class RedisShardBackplaneTest {
               .thenReturn(mockResponse);
         });
 
-    Map<String, Integer> actualReadCount =
-        backplane.updateCasReadCount(digestsAndReadCount.entrySet().stream());
+    Map<String, Integer> actualReadCount = backplane.updateCasReadCount(digestsAndReadCount);
 
     digestsAndReadCount.forEach(
         (digest, expectedReadCount) -> {
@@ -450,8 +449,7 @@ public class RedisShardBackplaneTest {
 
     when(jedisCluster.zrem(eq("CasReadCount"), any()))
         .thenReturn((long) numberOfDigestsToBeRemoved);
-    assertThat(backplane.removeCasReadCountEntries(digests.stream()))
-        .isEqualTo(numberOfDigestsToBeRemoved);
+    assertThat(backplane.removeCasReadCountEntries(digests)).isEqualTo(numberOfDigestsToBeRemoved);
   }
 
   @Test

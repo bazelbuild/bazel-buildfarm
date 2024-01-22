@@ -40,7 +40,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
 import net.jcip.annotations.ThreadSafe;
 
 @ThreadSafe
@@ -286,11 +285,10 @@ public interface Backplane {
   /**
    * Updates the read count for CAS entries based on the provided stream of digest and count.
    *
-   * @param casReadCountStream A Stream of Digest and its corresponding read count.
+   * @param casReadCountMap A map of Digest and its corresponding read count.
    * @return A Map containing the updated read counts for the specified CAS entries.
    */
-  Map<String, Integer> updateCasReadCount(Stream<Map.Entry<Digest, Integer>> casReadCountStream)
-      throws IOException;
+  Map<String, Integer> updateCasReadCount(Map<Digest, Integer> casReadCountMap) throws IOException;
 
   /**
    * Removes the CAS read count entries from the storage.
@@ -298,5 +296,5 @@ public interface Backplane {
    * @param digestsToBeRemoved CAS entries for which each read count needs to be removed.
    * @return total count of cas read count entries removed.
    */
-  int removeCasReadCountEntries(Stream<Digest> digestsToBeRemoved) throws IOException;
+  int removeCasReadCountEntries(Iterable<Digest> digestsToBeRemoved) throws IOException;
 }

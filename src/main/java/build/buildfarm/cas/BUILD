@@ -7,7 +7,6 @@ java_library(
         "@maven//:org_xerial_sqlite_jdbc",
     ],
     deps = [
-        "//src/main/java/build/buildfarm/backplane",
         "//src/main/java/build/buildfarm/common",
         "//src/main/java/build/buildfarm/common:BuildfarmExecutors",
         "//src/main/java/build/buildfarm/common/config",

@@ -1,6 +1,7 @@
-package build.buildfarm.cas.cfc;
+package build.buildfarm.metrics.cas;
 
 import static com.google.common.truth.Truth.assertThat;
+import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -44,6 +45,7 @@ public class CASAccessMetricsRecorderTest {
     this.backplane = Mockito.mock(Backplane.class);
     casAccessMetricsRecorder =
         new CASAccessMetricsRecorder(
+            newSingleThreadScheduledExecutor(),
             backplane, Duration.ofMillis(window), Duration.ofMillis(delay));
   }
 

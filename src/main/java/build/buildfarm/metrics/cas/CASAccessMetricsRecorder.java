@@ -1,4 +1,4 @@
-package build.buildfarm.cas.cfc;
+package build.buildfarm.metrics.cas;
 
 import static java.lang.String.format;
 
@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -37,7 +36,7 @@ import lombok.extern.java.Log;
  */
 @Log
 public final class CASAccessMetricsRecorder {
-  private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+  private final ScheduledExecutorService scheduler;
 
   private final Deque<Map<Digest, AtomicInteger>> readIntervalCountQueue;
 
@@ -58,6 +57,7 @@ public final class CASAccessMetricsRecorder {
   int intervalNumber = 0; // Assists in unit test.
 
   public CASAccessMetricsRecorder(
+      ScheduledExecutorService scheduler,
       Backplane backplane,
       Duration casEntryReadCountWindow,
       Duration casEntryReadCountUpdateInterval) {
@@ -67,6 +67,7 @@ public final class CASAccessMetricsRecorder {
     Preconditions.checkArgument(
         casEntryReadCountWindow.toMillis() % casEntryReadCountUpdateInterval.toMillis() == 0,
         "CASEntryReadCountWindow must be divisible by CASEntryReadCountUpdateInterval");
+    this.scheduler = scheduler;
     this.backplane = backplane;
     this.casEntryReadCountWindow = casEntryReadCountWindow;
     this.casEntryReadCountUpdateInterval = casEntryReadCountUpdateInterval;
@@ -163,8 +164,7 @@ public final class CASAccessMetricsRecorder {
                 k, (digest, readCount) -> readCount == null ? -v.get() : readCount - v.get()));
 
     try {
-      Map<String, Integer> updatedReadCount =
-          backplane.updateCasReadCount(effectiveReadCount.entrySet().stream());
+      Map<String, Integer> updatedReadCount = backplane.updateCasReadCount(effectiveReadCount);
       expireUnreadEntries(updatedReadCount, firstIntervalReadCount);
     } catch (Exception e) {
       log.log(Level.WARNING, "Failed to update the cas read count to backplane", e);
@@ -202,7 +202,7 @@ public final class CASAccessMetricsRecorder {
       return;
     }
     try {
-      int removedCount = backplane.removeCasReadCountEntries(digestsToExpire.stream());
+      int removedCount = backplane.removeCasReadCountEntries(digestsToExpire);
       log.fine(format("Number of cas read count entries removed : %d", removedCount));
     } catch (Exception e) {
       log.log(Level.WARNING, "Failed to remove cas read count entries", e);

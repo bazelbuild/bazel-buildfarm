@@ -62,6 +62,7 @@ import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.MultimapBuilder;
@@ -80,7 +81,6 @@ import com.google.rpc.Status;
 import io.grpc.Deadline;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -942,22 +942,22 @@ public class RedisShardBackplane implements Backplane {
   }
 
   @Override
-  public Map<String, Integer> updateCasReadCount(
-      Stream<Map.Entry<Digest, Integer>> casReadCountStream) throws IOException {
+  public Map<String, Integer> updateCasReadCount(Map<Digest, Integer> casReadCountMap)
+      throws IOException {
     return client.call(
         jedis ->
             state.casReadCount.incrementMembersScore(
                 jedis,
-                casReadCountStream.map(
-                    entry ->
-                        new AbstractMap.SimpleEntry<>(
-                            entry.getKey().getHash(), entry.getValue()))));
+                casReadCountMap.entrySet().stream()
+                    .collect(Collectors.toMap(e -> e.getKey().getHash(), Map.Entry::getValue))));
   }
 
   @Override
-  public int removeCasReadCountEntries(Stream<Digest> digestsToBeRemoved) throws IOException {
+  public int removeCasReadCountEntries(Iterable<Digest> digestsToBeRemoved) throws IOException {
     return client.call(
-        jedis -> state.casReadCount.removeMembers(jedis, digestsToBeRemoved.map(Digest::getHash)));
+        jedis ->
+            state.casReadCount.removeMembers(
+                jedis, Iterables.transform(digestsToBeRemoved, Digest::getHash)));
   }
 
   public static WorkerChange parseWorkerChange(String workerChangeJson)

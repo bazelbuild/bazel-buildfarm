@@ -21,6 +21,7 @@ import static build.buildfarm.common.io.Utils.getUser;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
+import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
@@ -31,7 +32,6 @@ import build.buildfarm.backplane.Backplane;
 import build.buildfarm.cas.ContentAddressableStorage;
 import build.buildfarm.cas.ContentAddressableStorage.Blob;
 import build.buildfarm.cas.MemoryCAS;
-import build.buildfarm.cas.cfc.CASAccessMetricsRecorder;
 import build.buildfarm.cas.cfc.CASFileCache;
 import build.buildfarm.common.BuildfarmExecutors;
 import build.buildfarm.common.DigestUtil;
@@ -49,6 +49,7 @@ import build.buildfarm.instance.Instance;
 import build.buildfarm.instance.shard.RedisShardBackplane;
 import build.buildfarm.instance.shard.RemoteInputStreamFactory;
 import build.buildfarm.instance.shard.WorkerStubs;
+import build.buildfarm.metrics.cas.CASAccessMetricsRecorder;
 import build.buildfarm.metrics.prometheus.PrometheusPublisher;
 import build.buildfarm.v1test.ShardWorker;
 import build.buildfarm.worker.ExecuteActionStage;
@@ -638,6 +639,7 @@ public final class Worker extends LoggingMain {
     if (configs.getBackplane().getCasMetrics().isEnabled()) {
       casAccessMetricsRecorder =
           new CASAccessMetricsRecorder(
+              newSingleThreadScheduledExecutor(),
               backplane,
               java.time.Duration.ofSeconds(
                   configs.getBackplane().getCasMetrics().getCasReadCountWindow()),

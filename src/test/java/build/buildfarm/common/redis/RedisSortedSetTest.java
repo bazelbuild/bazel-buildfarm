@@ -5,8 +5,8 @@ import static com.google.common.truth.Truth.assertThat;
 import build.buildfarm.common.config.BuildfarmConfigs;
 import build.buildfarm.instance.shard.JedisClusterFactory;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
-import java.util.stream.Stream;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -38,12 +38,11 @@ public class RedisSortedSetTest {
         Map.of("key1", 100, "key2", 50, "key3", 75, "key4", 25, "key5", 85);
 
     Map<String, Integer> membersScoreResponse =
-        redisSortedSet.incrementMembersScore(redis, membersScoreInput.entrySet().stream());
+        redisSortedSet.incrementMembersScore(redis, membersScoreInput);
 
     membersScoreResponse.forEach(
         (member, score) -> assertThat(membersScoreInput.get(member)).isEqualTo(score));
-    membersScoreResponse =
-        redisSortedSet.incrementMembersScore(redis, membersScoreInput.entrySet().stream());
+    membersScoreResponse = redisSortedSet.incrementMembersScore(redis, membersScoreInput);
     membersScoreResponse.forEach(
         (member, score) -> assertThat(2 * membersScoreInput.get(member)).isEqualTo(score));
   }
@@ -53,9 +52,9 @@ public class RedisSortedSetTest {
     Map<String, Integer> membersToAdd =
         Map.of("key1", 100, "key2", 50, "key3", 75, "key4", 25, "key5", 85);
 
-    Stream<String> membersToRemove = Stream.of("key1", "key2", "key7");
+    Iterable<String> membersToRemove = Arrays.asList("key1", "key2", "key7");
 
-    redisSortedSet.incrementMembersScore(redis, membersToAdd.entrySet().stream());
+    redisSortedSet.incrementMembersScore(redis, membersToAdd);
 
     int membersRemoved = redisSortedSet.removeMembers(redis, membersToRemove);
 

@@ -1,13 +1,10 @@
 package build.buildfarm.common.redis;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import redis.clients.jedis.JedisCluster;
 import redis.clients.jedis.JedisClusterPipeline;
 import redis.clients.jedis.Response;
@@ -47,16 +44,11 @@ public class RedisSortedSet {
    * @return A map containing updated scores for each member after the increment operation.
    */
   public Map<String, Integer> incrementMembersScore(
-      JedisCluster jedis, Stream<Map.Entry<String, Integer>> memberAndScore) {
+      JedisCluster jedis, Map<String, Integer> memberAndScore) {
     JedisClusterPipeline pipeline = jedis.pipelined();
-    Map<String, Response<Double>> updatedScoreResponse =
-        memberAndScore
-            .map(
-                entry ->
-                    new AbstractMap.SimpleEntry<>(
-                        entry.getKey(),
-                        pipeline.zincrby(this.name, entry.getValue(), entry.getKey())))
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    Map<String, Response<Double>> updatedScoreResponse = new HashMap<>();
+    memberAndScore.forEach(
+        (key, value) -> updatedScoreResponse.put(key, pipeline.zincrby(this.name, value, key)));
     pipeline.sync();
 
     Map<String, Integer> updatedScore = new HashMap<>();
@@ -74,7 +66,7 @@ public class RedisSortedSet {
    * @param members A stream of members to be removed from the set.
    * @return total count of members removed.
    */
-  public int removeMembers(JedisCluster jedis, Stream<String> members) {
+  public int removeMembers(JedisCluster jedis, Iterable<String> members) {
     Iterator<String> iterator = members.iterator();
     int batchSize = 128;
     int membersRemoved = 0;
