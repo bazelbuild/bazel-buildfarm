@@ -46,7 +46,9 @@ public class CASAccessMetricsRecorderTest {
     casAccessMetricsRecorder =
         new CASAccessMetricsRecorder(
             newSingleThreadScheduledExecutor(),
-            backplane, Duration.ofMillis(window), Duration.ofMillis(delay));
+            backplane,
+            Duration.ofMillis(window),
+            Duration.ofMillis(delay));
   }
 
   @After

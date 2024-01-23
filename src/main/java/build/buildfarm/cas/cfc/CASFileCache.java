@@ -65,7 +65,6 @@ import build.buildfarm.common.ZstdDecompressingOutputStream;
 import build.buildfarm.common.config.Cas;
 import build.buildfarm.common.grpc.Retrier;
 import build.buildfarm.common.grpc.Retrier.Backoff;
-import build.buildfarm.common.grpc.TracingMetadataUtils;
 import build.buildfarm.common.io.CountingOutputStream;
 import build.buildfarm.common.io.Directories;
 import build.buildfarm.common.io.FeedbackOutputStream;
