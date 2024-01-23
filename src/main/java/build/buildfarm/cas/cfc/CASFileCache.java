@@ -3054,15 +3054,6 @@ public abstract class CASFileCache implements ContentAddressableStorage {
             throw new IllegalStateException("storage conflict with existing key for " + key);
           }
         } else if (writeWinner.get()) {
-          RequestMetadata requestMetadata = TracingMetadataUtils.fromCurrentContext();
-          log.log(
-              Level.INFO,
-              format(
-                  "Successfully wrote: %s; metadata: actionId - %s, actionMnemonic - %s, target - %s",
-                  key,
-                  requestMetadata.getActionId(),
-                  requestMetadata.getActionMnemonic(),
-                  requestMetadata.getTargetId()));
           log.log(Level.FINER, "won the race to insert " + key);
           try {
             onInsert.run();
