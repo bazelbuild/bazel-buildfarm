@@ -12,6 +12,6 @@ bazel_dep(name = "rules_license", version = "0.0.8")
 
 bazel_dep(
     name = "buildifier_prebuilt",
-    version = "7.0.2",
+    version = "6.4.0",
     dev_dependency = True,
 )
