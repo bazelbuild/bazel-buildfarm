@@ -191,7 +191,7 @@ public final class CASAccessMetricsRecorder {
             }
           }
         });
-    if (digestsToExpire.isEmpty()) {
+    if (!digestsToExpire.isEmpty()) {
       try {
         int removedCount = backplane.removeCasReadCountEntries(digestsToExpire);
         log.fine(format("Number of cas read count entries removed : %d", removedCount));
