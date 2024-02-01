@@ -20,6 +20,7 @@ import static build.buildfarm.common.io.Utils.formatIOError;
 import static build.buildfarm.common.io.Utils.getUser;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.util.concurrent.MoreExecutors.shutdownAndAwaitTermination;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -89,6 +90,8 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import javax.annotation.Nullable;
@@ -138,6 +141,8 @@ public final class Worker extends LoggingMain {
   private LoadingCache<String, Instance> workerStubs;
   private AtomicBoolean released = new AtomicBoolean(true);
   @Nullable private CASAccessMetricsRecorder casAccessMetricsRecorder;
+  @Nullable private ScheduledExecutorService casAccessMetricsScheduler;
+
 
   /**
    * The method will prepare the worker for graceful shutdown when the worker is ready. Note on
@@ -637,9 +642,10 @@ public final class Worker extends LoggingMain {
         (digests) -> addBlobsLocation(digests, configs.getWorker().getPublicName()), skipLoad);
 
     if (configs.getBackplane().getCasMetrics().isEnabled()) {
+      casAccessMetricsScheduler = newSingleThreadScheduledExecutor();
       casAccessMetricsRecorder =
           new CASAccessMetricsRecorder(
-              newSingleThreadScheduledExecutor(),
+              casAccessMetricsScheduler,
               backplane,
               java.time.Duration.ofSeconds(
                   configs.getBackplane().getCasMetrics().getCasReadCountWindow()),
@@ -721,6 +727,9 @@ public final class Worker extends LoggingMain {
     }
     if (casAccessMetricsRecorder != null) {
       casAccessMetricsRecorder.stop();
+      if (!shutdownAndAwaitTermination(casAccessMetricsScheduler, 10, TimeUnit.SECONDS)) {
+        log.warning("could not shut down cas access metrics scheduler");
+      }
     }
     if (server != null) {
       log.info("Shutting down the server");

@@ -25,6 +25,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
+
+import com.google.common.base.Supplier;
 import lombok.SneakyThrows;
 import lombok.extern.java.Log;
 
@@ -127,11 +129,6 @@ public final class CASAccessMetricsRecorder {
   /** Stops the scheduler responsible to update read counts periodically. */
   public void stop() throws InterruptedException {
     running = false;
-    scheduler.shutdown();
-    if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-      log.severe("Could not shut down cas access metrics recorder service");
-    }
-    scheduler.shutdownNow();
   }
 
   private int getQueueLength() {
@@ -188,8 +185,7 @@ public final class CASAccessMetricsRecorder {
           if (totalReadCount != null && totalReadCount == 0) {
             digestsToExpire.add(digest);
             // If the readCount is 0 within an interval, it indicates that the entry was written
-            // during
-            // that interval but remained unread.
+            // during that interval but remained unread.
             if (readCount.get() == 0) {
               log.info(
                   format(
@@ -199,13 +195,12 @@ public final class CASAccessMetricsRecorder {
           }
         });
     if (digestsToExpire.isEmpty()) {
-      return;
-    }
-    try {
-      int removedCount = backplane.removeCasReadCountEntries(digestsToExpire);
-      log.fine(format("Number of cas read count entries removed : %d", removedCount));
-    } catch (Exception e) {
-      log.log(Level.WARNING, "Failed to remove cas read count entries", e);
+      try {
+        int removedCount = backplane.removeCasReadCountEntries(digestsToExpire);
+        log.fine(format("Number of cas read count entries removed : %d", removedCount));
+      } catch (Exception e) {
+        log.log(Level.WARNING, "Failed to remove cas read count entries", e);
+      }
     }
   }
 
@@ -230,11 +225,10 @@ public final class CASAccessMetricsRecorder {
     }
   }
 
-  @SneakyThrows
-  private static <T> T callWithLock(Lock lock, Callable<T> task) {
+  private static <T> T callWithLock(Lock lock, Supplier<T> task) {
     lock.lock();
     try {
-      return task.call();
+      return task.get();
     } finally {
       lock.unlock();
     }
