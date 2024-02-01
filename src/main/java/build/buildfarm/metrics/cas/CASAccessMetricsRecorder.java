@@ -8,6 +8,7 @@ import build.buildfarm.common.DigestUtil;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
+import com.google.common.base.Supplier;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Deque;
@@ -16,7 +17,6 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,9 +25,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
-
-import com.google.common.base.Supplier;
-import lombok.SneakyThrows;
 import lombok.extern.java.Log;
 
 /**

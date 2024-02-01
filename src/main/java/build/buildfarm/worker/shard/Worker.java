@@ -143,7 +143,6 @@ public final class Worker extends LoggingMain {
   @Nullable private CASAccessMetricsRecorder casAccessMetricsRecorder;
   @Nullable private ScheduledExecutorService casAccessMetricsScheduler;
 
-
   /**
    * The method will prepare the worker for graceful shutdown when the worker is ready. Note on
    * using stderr here instead of log. By the time this is called in PreDestroy, the log is no
