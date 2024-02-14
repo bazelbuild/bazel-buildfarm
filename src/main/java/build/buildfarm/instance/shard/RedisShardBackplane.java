@@ -254,7 +254,7 @@ public class RedisShardBackplane implements Backplane {
               expiresAt = now.plusMillis(defaultTimeout_ms);
               String keyValue = String.format("%d", expiresAt.toEpochMilli());
               long timeout_s = Time.millisecondsToSeconds(defaultTimeout_ms);
-              state.processingOperations.insert(jedis, operationName, keyValue, timeout_s);
+              state.processingOperations.insert(jedis, operationName, keyValue, (int) timeout_s);
             }
 
             // handle expiration
@@ -287,7 +287,7 @@ public class RedisShardBackplane implements Backplane {
               expiresAt = now.plusMillis(defaultTimeout_ms);
               String keyValue = String.format("%d", expiresAt.toEpochMilli());
               long timeout_s = Time.millisecondsToSeconds(defaultTimeout_ms);
-              state.dispatchingOperations.insert(jedis, operationName, keyValue, timeout_s);
+              state.dispatchingOperations.insert(jedis, operationName, keyValue, (int) timeout_s);
             }
 
             // handle expiration
@@ -325,7 +325,8 @@ public class RedisShardBackplane implements Backplane {
   }
 
   private void scanDispatched(JedisCluster jedis, Consumer<String> onOperationName) {
-    for (String operationName : state.dispatchedOperations.keys(jedis)) {
+    Set<String> keys = state.dispatchedOperations.keys(jedis);
+    for (String operationName : keys) {
       onOperationName.accept(operationName);
     }
   }
@@ -449,7 +450,9 @@ public class RedisShardBackplane implements Backplane {
             .map(RedisShardBackplane::parseOperationChannel)
             .collect(Collectors.toList());
 
-    for (Map.Entry<String, String> entry : state.operations.get(jedis, operationChannelNames)) {
+    Iterable<Map.Entry<String, String>> entries =
+        state.operations.get(jedis, operationChannelNames);
+    for (Map.Entry<String, String> entry : entries) {
       String json = entry.getValue();
       Operation operation = json == null ? null : RedisShardBackplane.parseOperationJson(json);
       String operationName = entry.getKey();
@@ -1135,8 +1138,8 @@ public class RedisShardBackplane implements Backplane {
     ImmutableMap.Builder<String, String> builder = new ImmutableMap.Builder<>();
     client.run(
         jedis -> {
-          for (Map.Entry<String, String> entry :
-              state.dispatchedOperations.asMap(jedis).entrySet()) {
+          Map<String, String> entries = state.dispatchedOperations.asMap(jedis);
+          for (Map.Entry<String, String> entry : entries.entrySet()) {
             builder.put(entry.getKey(), entry.getValue());
           }
         });

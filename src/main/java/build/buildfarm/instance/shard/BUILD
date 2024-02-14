@@ -10,6 +10,7 @@ java_library(
         "//src/main/java/build/buildfarm/common",
         "//src/main/java/build/buildfarm/common:BuildfarmExecutors",
         "//src/main/java/build/buildfarm/common/config",
+        "//src/main/java/build/buildfarm/common/distributed",
         "//src/main/java/build/buildfarm/common/grpc",
         "//src/main/java/build/buildfarm/common/redis",
         "//src/main/java/build/buildfarm/instance",

@@ -13,10 +13,7 @@
 // limitations under the License.
 
 package build.buildfarm.instance.shard;
-
 import build.buildfarm.common.redis.BalancedRedisQueue;
-import build.buildfarm.common.redis.RedisHashMap;
-import build.buildfarm.common.redis.RedisMap;
 
 /**
  * @class DistributedState
@@ -32,7 +29,7 @@ public class DistributedState {
    * @details This is done to keep track of which machines are online and known by the rest of the
    *     cluster.
    */
-  public RedisHashMap executeWorkers;
+  public Map<String, String> executeWorkers;
 
   /**
    * @field storageWorkers
@@ -40,7 +37,7 @@ public class DistributedState {
    * @details This is done to keep track of which machines are online and known by the rest of the
    *     cluster.
    */
-  public RedisHashMap storageWorkers;
+  public Map<String, String> storageWorkers;
 
   /**
    * @field prequeue
@@ -57,7 +54,7 @@ public class DistributedState {
    *     https://github.com/bazelbuild/remote-apis/blob/3b4b6402103539d66fcdd1a4d945f660742665ca/build/bazel/remote/execution/v2/remote_execution.proto#L144
    *     for the remote API definition of an action cache.
    */
-  public RedisMap actionCache;
+  public Map<String, String> actionCache;
 
   /**
    * @field operationQueue
@@ -76,7 +73,7 @@ public class DistributedState {
    *     invocation has finished so that developers can lookup the status of their build and
    *     information about the operations that ran.
    */
-  public Operations operations;
+  public Map<String, String> operations;
 
   /**
    * @field processingOperations
@@ -84,7 +81,7 @@ public class DistributedState {
    * @details We keep track of them in the distributed state to avoid them getting lost if a
    *     particular machine goes down.
    */
-  public RedisMap processingOperations;
+  public Map<String, String> processingOperations;
 
   /**
    * @field dispatchingOperations
@@ -92,7 +89,7 @@ public class DistributedState {
    * @details We keep track of them in the distributed state to avoid them getting lost if a
    *     particular machine goes down.
    */
-  public RedisMap dispatchingOperations;
+  public Map<String, String> dispatchingOperations;
 
   /**
    * @field dispatchedOperations
@@ -100,7 +97,7 @@ public class DistributedState {
    * @details We keep track of them here so they can be re-executed if the progress of the execution
    *     is lost.
    */
-  public RedisHashMap dispatchedOperations;
+  public Map<String, String> dispatchedOperations;
 
   /**
    * @field casWorkerMap
@@ -117,7 +114,7 @@ public class DistributedState {
    *     their action request executed. The use-case is blocking a particular user or client from
    *     continuing their requests.
    */
-  public RedisMap blockedInvocations;
+  public Map<String, String> blockedInvocations;
 
   /**
    * @field blockedActions
@@ -126,5 +123,5 @@ public class DistributedState {
    *     action request executed. The use case is blocking a certain action hash they we didn't like
    *     and will refuse to run again.
    */
-  public RedisMap blockedActions;
+  public Map<String, String> blockedActions;
 }
