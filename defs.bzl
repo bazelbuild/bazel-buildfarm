@@ -2,15 +2,15 @@
 buildfarm definitions that can be imported into other WORKSPACE files
 """
 
-load("@rules_jvm_external//:defs.bzl", "maven_install")
-load("@remote_apis//:repository_rules.bzl", "switched_rules_by_language")
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
 load(
     "@io_bazel_rules_docker//repositories:repositories.bzl",
     container_repositories = "repositories",
 )
 load("@io_grpc_grpc_java//:repositories.bzl", "IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS", "grpc_java_repositories")
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
+load("@remote_apis//:repository_rules.bzl", "switched_rules_by_language")
+load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 IO_NETTY_MODULES = [
     "buffer",
@@ -88,7 +88,7 @@ def buildfarm_init(name = "buildfarm"):
                         "org.bouncycastle:bcprov-jdk15on:1.70",
                         "net.jcip:jcip-annotations:1.0",
                     ] + ["io.netty:netty-%s:4.1.97.Final" % module for module in IO_NETTY_MODULES] +
-                    ["io.grpc:grpc-%s:1.56.1" % module for module in IO_GRPC_MODULES] +
+                    ["io.grpc:grpc-%s:1.62.2" % module for module in IO_GRPC_MODULES] +
                     [
                         "io.prometheus:simpleclient:0.15.0",
                         "io.prometheus:simpleclient_hotspot:0.15.0",
@@ -103,7 +103,7 @@ def buildfarm_init(name = "buildfarm"):
                         "me.dinowernli:java-grpc-prometheus:0.6.0",
                         "org.apache.tomcat:annotations-api:6.0.53",
                         "org.checkerframework:checker-qual:3.38.0",
-                        "org.mockito:mockito-core:2.25.0",
+                        "org.mockito:mockito-core:5.10.0",
                         "org.openjdk.jmh:jmh-core:1.37",
                         "org.openjdk.jmh:jmh-generator-annprocess:1.37",
                         "org.redisson:redisson:3.23.4",
