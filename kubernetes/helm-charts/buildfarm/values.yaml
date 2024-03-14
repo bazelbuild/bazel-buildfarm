@@ -138,6 +138,7 @@ shardWorker:
   service:
     type: ClusterIP
     port: 8982
+    headless: true
 
   #nodeSelector: {}
   #tolerations: []
