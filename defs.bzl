@@ -4,7 +4,6 @@ buildfarm definitions that can be imported into other WORKSPACE files
 
 load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
 load("@io_grpc_grpc_java//:repositories.bzl", "grpc_java_repositories")
-load("@remote_apis//:repository_rules.bzl", "switched_rules_by_language")
 
 def buildfarm_init(name = "buildfarm"):
     """
@@ -14,10 +13,6 @@ def buildfarm_init(name = "buildfarm"):
       name: the name of the repository
     """
 
-    switched_rules_by_language(
-        name = "bazel_remote_apis_imports",
-        java = True,
-    )
     grpc_java_repositories()
 
     llvm_toolchain(
