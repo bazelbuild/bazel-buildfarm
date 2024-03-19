@@ -31,15 +31,6 @@ def archive_dependencies(third_party):
             "strip_prefix": "googleapis-5f8a02d6b7e77bd26e0375a00ca20eb2f3ee1ba2",
             "url": "https://github.com/googleapis/googleapis/archive/5f8a02d6b7e77bd26e0375a00ca20eb2f3ee1ba2.zip",
         },
-        {
-            "name": "remote_apis",
-            "build_file": "%s:BUILD.remote_apis" % third_party,
-            "patch_args": ["-p1"],
-            "patches": ["%s/remote-apis:remote-apis.patch" % third_party],
-            "sha256": "743d2d5b5504029f3f825beb869ce0ec2330b647b3ee465a4f39ca82df83f8bf",
-            "strip_prefix": "remote-apis-636121a32fa7b9114311374e4786597d8e7a69f3",
-            "url": "https://github.com/bazelbuild/remote-apis/archive/636121a32fa7b9114311374e4786597d8e7a69f3.zip",
-        },
 
         # Bazel is referenced as a dependency so that buildfarm can access the linux-sandbox as a potential execution wrapper.
         {
