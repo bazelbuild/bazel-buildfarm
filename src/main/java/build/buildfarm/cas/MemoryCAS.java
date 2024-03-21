@@ -287,7 +287,8 @@ public class MemoryCAS implements ContentAddressableStorage {
       log.log(
           Level.WARNING,
           String.format(
-              "Out of nodes to remove, sizeInBytes = %d, maxSizeInBytes = %d, storage = %d, list = %d",
+              "Out of nodes to remove, sizeInBytes = %d, maxSizeInBytes = %d, storage = %d, list ="
+                  + " %d",
               sizeInBytes, maxSizeInBytes, storage.size(), size()));
     }
 

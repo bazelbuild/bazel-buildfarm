@@ -233,7 +233,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
                 @Override
                 public SettableFuture<Long> load(Digest digest) {
                   SettableFuture<Long> future = SettableFuture.create();
-                  if (containsLocal(digest, /* result=*/ null, (key) -> {})) {
+                  if (containsLocal(digest, /* result= */ null, (key) -> {})) {
                     future.set(digest.getSizeBytes());
                   }
                   return future;
@@ -602,7 +602,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
 
   @Override
   public Blob get(Digest digest) {
-    try (InputStream in = newInput(Compressor.Value.IDENTITY, digest, /* offset=*/ 0)) {
+    try (InputStream in = newInput(Compressor.Value.IDENTITY, digest, /* offset= */ 0)) {
       return new Blob(ByteString.readFrom(in), digest);
     } catch (NoSuchFileException e) {
       return null;
@@ -638,7 +638,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     boolean readThrough = shouldReadThrough(requestMetadata);
     InputStream in;
     try {
-      if (readThrough && !contains(digest, /* result=*/ null)) {
+      if (readThrough && !contains(digest, /* result= */ null)) {
         // really need to be able to reuse/restart the same write over
         // multiple requests - if we get successive read throughs for a single
         // digest, we should pick up from where we were last time
@@ -765,9 +765,9 @@ public abstract class CASFileCache implements ContentAddressableStorage {
               UUID.randomUUID(),
               () -> completeWrite(blob.getDigest()),
               blob.getDigest().getSizeBytes(),
-              /* isExecutable=*/ false,
+              /* isExecutable= */ false,
               () -> invalidateWrite(blob.getDigest()),
-              /* isReset=*/ true);
+              /* isReset= */ true);
       boolean referenced = out == null;
       try {
         if (out != null) {
@@ -876,7 +876,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
           super.close();
         }
       } finally {
-        onClosed.accept(/* cancelled=*/ false);
+        onClosed.accept(/* cancelled= */ false);
       }
     }
 
@@ -885,7 +885,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       try {
         out.cancel();
       } finally {
-        onClosed.accept(/* cancelled=*/ true);
+        onClosed.accept(/* cancelled= */ true);
       }
     }
   }
@@ -964,7 +964,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
           public synchronized boolean isComplete() {
             return getFuture().isDone()
                 || ((closedFuture == null || closedFuture.isDone())
-                    && containsLocal(key.getDigest(), /* result=*/ null, (key) -> {}));
+                    && containsLocal(key.getDigest(), /* result= */ null, (key) -> {}));
           }
 
           @Override
@@ -1112,7 +1112,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
               uuid,
               () -> completeWrite(digest),
               digest.getSizeBytes(),
-              /* isExecutable=*/ false,
+              /* isExecutable= */ false,
               () -> invalidateWrite(digest),
               isReset);
     } catch (InterruptedException e) {
@@ -1161,14 +1161,14 @@ public abstract class CASFileCache implements ContentAddressableStorage {
 
       @Override
       public void cancel() throws IOException {
-        if (closed.compareAndSet(/* expected=*/ false, /* update=*/ true)) {
+        if (closed.compareAndSet(/* expected= */ false, /* update= */ true)) {
           cancellableOut.cancel();
         }
       }
 
       @Override
       public void close() throws IOException {
-        if (closed.compareAndSet(/* expected=*/ false, /* update=*/ true)) {
+        if (closed.compareAndSet(/* expected= */ false, /* update= */ true)) {
           try {
             out.close();
             decrementReference(key);
@@ -1187,7 +1187,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
 
   @Override
   public void put(Blob blob) throws InterruptedException {
-    put(blob, /* onExpiration=*/ null);
+    put(blob, /* onExpiration= */ null);
   }
 
   @Override
@@ -1214,7 +1214,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     public void lockInterruptibly() throws InterruptedException {
       // attempt to atomically synchronize
       synchronized (locked) {
-        while (!locked.compareAndSet(/* expected=*/ false, /* update=*/ true)) {
+        while (!locked.compareAndSet(/* expected= */ false, /* update= */ true)) {
           locked.wait();
         }
       }
@@ -1241,7 +1241,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
 
     @Override
     public void unlock() {
-      if (!locked.compareAndSet(/* expected=*/ true, /* update=*/ false)) {
+      if (!locked.compareAndSet(/* expected= */ true, /* update= */ false)) {
         throw new IllegalMonitorStateException("the lock was not held");
       }
       synchronized (locked) {
@@ -1845,7 +1845,8 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       log.log(
           Level.INFO,
           format(
-              "CASFileCache::expireEntry(%d) unreferenced list is empty, %d bytes, %d keys with %d references, min(%d, %s), max(%d, %s)",
+              "CASFileCache::expireEntry(%d) unreferenced list is empty, %d bytes, %d keys with %d"
+                  + " references, min(%d, %s), max(%d, %s)",
               blobSizeInBytes, sizeInBytes, keys, references, min, minkey, max, maxkey));
       wait();
       if (sizeInBytes <= maxSizeInBytes) {
@@ -2010,7 +2011,8 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         e = waitForLastUnreferencedEntry(blobSizeInBytes)) {
       if (e.referenceCount != 0) {
         throw new IllegalStateException(
-            "ERROR: Reference counts lru ordering has not been maintained correctly, attempting to expire referenced (or negatively counted) content "
+            "ERROR: Reference counts lru ordering has not been maintained correctly, attempting to"
+                + " expire referenced (or negatively counted) content "
                 + e.key
                 + " with "
                 + e.referenceCount
@@ -2324,7 +2326,8 @@ public abstract class CASFileCache implements ContentAddressableStorage {
             log.log(
                 Level.SEVERE,
                 format(
-                    "CASFileCache::putDirectory(%s) exists, but input %s does not, purging it with fire and resorting to fetch",
+                    "CASFileCache::putDirectory(%s) exists, but input %s does not, purging it with"
+                        + " fire and resorting to fetch",
                     DigestUtil.toString(digest), input));
             e = null;
             break;
@@ -2339,12 +2342,13 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         if (e != null) {
           log.log(Level.FINER, format("found existing entry for %s", path.getFileName()));
           if (directoryEntryExists(path, e, directoriesByDigest)) {
-            return immediateFuture(new PathResult(path, /* missed=*/ false));
+            return immediateFuture(new PathResult(path, /* missed= */ false));
           }
           log.log(
               Level.SEVERE,
               format(
-                  "directory %s does not exist in cache, purging it with fire and resorting to fetch",
+                  "directory %s does not exist in cache, purging it with fire and resorting to"
+                      + " fetch",
                   path.getFileName()));
         }
 
@@ -2472,7 +2476,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
                       : directoriesByDigest.get(digest),
                   Deadline.after(10, SECONDS));
           directoryStorage.put(digest, e);
-          return new PathResult(path, /* missed=*/ true);
+          return new PathResult(path, /* missed= */ true);
         },
         service);
   }
@@ -2507,7 +2511,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
             digest.getSizeBytes(),
             isExecutable,
             () -> invalidateWrite(digest),
-            /* isReset=*/ true);
+            /* isReset= */ true);
     if (out != null) {
       boolean complete = false;
       try {

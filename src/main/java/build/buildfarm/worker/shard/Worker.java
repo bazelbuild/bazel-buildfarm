@@ -151,11 +151,13 @@ public final class Worker extends LoggingMain {
   public void prepareWorkerForGracefulShutdown() {
     if (configs.getWorker().getGracefulShutdownSeconds() == 0) {
       log.info(
-          "Graceful Shutdown is not enabled. Worker is shutting down without finishing executions in progress.");
+          "Graceful Shutdown is not enabled. Worker is shutting down without finishing executions"
+              + " in progress.");
     } else {
       inGracefulShutdown = true;
       log.info(
-          "Graceful Shutdown - The current worker will not be registered again and should be shutdown gracefully!");
+          "Graceful Shutdown - The current worker will not be registered again and should be"
+              + " shutdown gracefully!");
       pipeline.stopMatchingOperations();
       int scanRate = 30; // check every 30 seconds
       int timeWaited = 0;
@@ -393,8 +395,8 @@ public final class Worker extends LoggingMain {
         configs.isAllowSymlinkTargetAbsolute(),
         removeDirectoryService,
         accessRecorder
-        /* deadlineAfter=*/
-        /* deadlineAfterUnits=*/ );
+        /* deadlineAfter= */
+        /* deadlineAfterUnits= */ );
   }
 
   private void onStoragePut(Digest digest) {
@@ -559,8 +561,8 @@ public final class Worker extends LoggingMain {
       backplane =
           new RedisShardBackplane(
               identifier,
-              /* subscribeToBackplane=*/ false,
-              /* runFailsafeOperation=*/ false,
+              /* subscribeToBackplane= */ false,
+              /* runFailsafeOperation= */ false,
               this::stripOperation,
               this::stripQueuedOperation);
       backplane.start(configs.getWorker().getPublicName());

@@ -148,21 +148,21 @@ class CASFileCacheTest {
     fileCache =
         new CASFileCache(
             root,
-            /* maxSizeInBytes=*/ 1024,
-            /* maxEntrySizeInBytes=*/ 1024,
-            /* hexBucketLevels=*/ 1,
+            /* maxSizeInBytes= */ 1024,
+            /* maxEntrySizeInBytes= */ 1024,
+            /* hexBucketLevels= */ 1,
             storeFileDirsIndexInMemory,
-            /* execRootFallback=*/ false,
+            /* execRootFallback= */ false,
             DIGEST_UTIL,
             expireService,
-            /* accessRecorder=*/ directExecutor(),
+            /* accessRecorder= */ directExecutor(),
             storage,
-            /* directoriesIndexDbName=*/ ":memory:",
+            /* directoriesIndexDbName= */ ":memory:",
             onPut,
             /* onReadComplete=*/ digest -> {},
             onExpire,
             delegate,
-            /* delegateSkipLoad=*/ false) {
+            /* delegateSkipLoad= */ false) {
           @Override
           protected InputStream newExternalInput(
               Compressor.Value compressor, Digest digest, long offset) throws IOException {
@@ -208,7 +208,7 @@ class CASFileCacheTest {
     ByteString blob = ByteString.copyFromUtf8("");
     Digest blobDigest = DIGEST_UTIL.compute(blob);
     // supply an empty input stream if called for test clarity
-    when(mockInputStreamFactory.newInput(Compressor.Value.IDENTITY, blobDigest, /* offset=*/ 0))
+    when(mockInputStreamFactory.newInput(Compressor.Value.IDENTITY, blobDigest, /* offset= */ 0))
         .thenReturn(ByteString.EMPTY.newInput());
     try {
       fileCache.put(blobDigest, false);
@@ -375,7 +375,7 @@ class CASFileCacheTest {
     Files.write(execPath, blob.toByteArray());
     EvenMoreFiles.setReadOnlyPerms(execPath, true, fileStore);
 
-    StartupCacheResults results = fileCache.start(/* skipLoad=*/ true);
+    StartupCacheResults results = fileCache.start(/* skipLoad= */ true);
 
     // check the startup results to ensure our two files were processed
     assertThat(results.load.loadSkipped).isTrue();
@@ -400,7 +400,7 @@ class CASFileCacheTest {
     Files.write(
         invalidExec, validBlob.toByteArray()); // content would match but for invalid exec field
 
-    fileCache.start(/* skipLoad=*/ false);
+    fileCache.start(/* skipLoad= */ false);
 
     assertThat(!Files.exists(tooFewComponents)).isTrue();
     assertThat(!Files.exists(tooManyComponents)).isTrue();
@@ -435,7 +435,7 @@ class CASFileCacheTest {
     ByteString bigContent = ByteString.copyFrom(bigData);
     Digest bigDigest = DIGEST_UTIL.compute(bigContent);
     blobs.put(bigDigest, bigContent);
-    Path bigPath = fileCache.put(bigDigest, /* isExecutable=*/ false);
+    Path bigPath = fileCache.put(bigDigest, /* isExecutable= */ false);
 
     AtomicBoolean started = new AtomicBoolean(false);
     ExecutorService service = newSingleThreadExecutor();
@@ -446,7 +446,7 @@ class CASFileCacheTest {
               ByteString content = ByteString.copyFromUtf8("CAS Would Exceed Max Size");
               Digest digest = DIGEST_UTIL.compute(content);
               blobs.put(digest, content);
-              fileCache.put(digest, /* isExecutable=*/ false);
+              fileCache.put(digest, /* isExecutable= */ false);
               return null;
             });
     while (!started.get()) {
@@ -476,10 +476,10 @@ class CASFileCacheTest {
     Digest digestThree = DIGEST_UTIL.compute(contentThree);
     blobs.put(digestThree, contentThree);
 
-    String pathOne = fileCache.put(digestOne, /* isExecutable=*/ false).getFileName().toString();
-    String pathTwo = fileCache.put(digestTwo, /* isExecutable=*/ false).getFileName().toString();
+    String pathOne = fileCache.put(digestOne, /* isExecutable= */ false).getFileName().toString();
+    String pathTwo = fileCache.put(digestTwo, /* isExecutable= */ false).getFileName().toString();
     String pathThree =
-        fileCache.put(digestThree, /* isExecutable=*/ false).getFileName().toString();
+        fileCache.put(digestThree, /* isExecutable= */ false).getFileName().toString();
     fileCache.decrementReferences(
         ImmutableList.of(pathOne, pathTwo, pathThree), ImmutableList.of());
     /* three -> two -> one */
@@ -500,8 +500,8 @@ class CASFileCacheTest {
     fileCache.put(blob);
 
     Digest mismatchedDigest = digest.toBuilder().setSizeBytes(digest.getSizeBytes() + 1).build();
-    assertThat(fileCache.contains(digest, /* result=*/ null)).isTrue();
-    assertThat(fileCache.contains(mismatchedDigest, /* result=*/ null)).isFalse();
+    assertThat(fileCache.contains(digest, /* result= */ null)).isTrue();
+    assertThat(fileCache.contains(mismatchedDigest, /* result= */ null)).isFalse();
   }
 
   @Test
@@ -697,14 +697,14 @@ class CASFileCacheTest {
     Blob blob = new Blob(content, DIGEST_UTIL);
 
     fileCache.put(blob);
-    String key = fileCache.getKey(blob.getDigest(), /* isExecutable=*/ false);
+    String key = fileCache.getKey(blob.getDigest(), /* isExecutable= */ false);
     // putCreatesFile verifies this
     Files.delete(fileCache.getPath(key));
     // update entry with expired deadline
     storage.get(key).existsDeadline = Deadline.after(0, SECONDS);
 
     try (InputStream in =
-        fileCache.newInput(Compressor.Value.IDENTITY, blob.getDigest(), /* offset=*/ 0)) {
+        fileCache.newInput(Compressor.Value.IDENTITY, blob.getDigest(), /* offset= */ 0)) {
       fail("should not get here");
     } catch (NoSuchFileException e) {
       // success
@@ -878,18 +878,18 @@ class CASFileCacheTest {
     }
     blobs.put(expiringBlob.getDigest(), expiringBlob.getData());
     decrementReference(
-        fileCache.put(expiringBlob.getDigest(), /* isExecutable=*/ false)); // expected eviction
+        fileCache.put(expiringBlob.getDigest(), /* isExecutable= */ false)); // expected eviction
     blobs.clear();
     decrementReference(
         fileCache.put(
             expiringBlob.getDigest(),
-            /* isExecutable=*/ true)); // should be fed from storage directly, not through delegate
+            /* isExecutable= */ true)); // should be fed from storage directly, not through delegate
 
     fileCache.put(new Blob(ByteString.copyFromUtf8("Hello, World"), DIGEST_UTIL));
 
     verifyNoInteractions(onExpire);
     // assert expiration of non-executable digest
-    String expiringKey = fileCache.getKey(expiringBlob.getDigest(), /* isExecutable=*/ false);
+    String expiringKey = fileCache.getKey(expiringBlob.getDigest(), /* isExecutable= */ false);
     assertThat(storage.containsKey(expiringKey)).isFalse();
     assertThat(Files.exists(fileCache.getPath(expiringKey))).isFalse();
   }
@@ -1113,14 +1113,14 @@ class CASFileCacheTest {
     CASFileCache flakyExternalCAS =
         new CASFileCache(
             root,
-            /* maxSizeInBytes=*/ 1024,
-            /* maxEntrySizeInBytes=*/ 1024,
-            /* hexBucketLevels=*/ 1,
+            /* maxSizeInBytes= */ 1024,
+            /* maxEntrySizeInBytes= */ 1024,
+            /* hexBucketLevels= */ 1,
             storeFileDirsIndexInMemory,
-            /* execRootFallback=*/ false,
+            /* execRootFallback= */ false,
             DIGEST_UTIL,
             expireService,
-            /* accessRecorder=*/ directExecutor(),
+            /* accessRecorder= */ directExecutor(),
             storage,
             /* directoriesIndexDbName=*/ ":memory:",
             /* onPut=*/ digest -> {},
@@ -1177,14 +1177,14 @@ class CASFileCacheTest {
     ContentAddressableStorage undelegatedCAS =
         new CASFileCache(
             root,
-            /* maxSizeInBytes=*/ 1024,
-            /* maxEntrySizeInBytes=*/ 1024,
-            /* hexBucketLevels=*/ 1,
+            /* maxSizeInBytes= */ 1024,
+            /* maxEntrySizeInBytes= */ 1024,
+            /* hexBucketLevels= */ 1,
             storeFileDirsIndexInMemory,
-            /* execRootFallback=*/ false,
+            /* execRootFallback= */ false,
             DIGEST_UTIL,
             expireService,
-            /* accessRecorder=*/ directExecutor(),
+            /* accessRecorder= */ directExecutor(),
             storage,
             /* directoriesIndexDbName=*/ ":memory:",
             /* onPut=*/ digest -> {},
@@ -1207,7 +1207,7 @@ class CASFileCacheTest {
     Digest blobDigest = DIGEST_UTIL.compute(blob);
     NoSuchFileException expected = null;
     try (InputStream in =
-        undelegatedCAS.newInput(Compressor.Value.IDENTITY, blobDigest, /* offset=*/ 0)) {
+        undelegatedCAS.newInput(Compressor.Value.IDENTITY, blobDigest, /* offset= */ 0)) {
       fail("should not get here");
     } catch (NoSuchFileException e) {
       expected = e;
@@ -1253,7 +1253,8 @@ class CASFileCacheTest {
                 writeStreamObserver.registerCallback();
                 writeStreamObserver.ownStream(); // this thread will get the ownership of stream
                 barrier.await(); // let both the threads get same write stream.
-                while (write1.getState() != WAITING) ; // wait for first request to go in wait state
+                while (write1.getState() != WAITING)
+                  ; // wait for first request to go in wait state
                 writeStreamObserver.write(blob);
                 writeStreamObserver.close();
               } catch (Exception e) {
@@ -1305,6 +1306,7 @@ class CASFileCacheTest {
     synchronized void ownStream() throws Exception {
       this.out = write.getOutput(10, MILLISECONDS, () -> {});
     }
+
     /**
      * Request 1 may invoke this method for request 2 or vice-versa via callback on
      * write.getFuture(). Synchronization is necessary to prevent conflicts when this method is
@@ -1357,8 +1359,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.osX()
-                          .toBuilder()
+                      Configuration.osX().toBuilder()
                           .setAttributeViews("basic", "owner", "posix", "unix")
                           .build())
                   .getRootDirectories(),
@@ -1373,8 +1374,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.osX()
-                          .toBuilder()
+                      Configuration.osX().toBuilder()
                           .setAttributeViews("basic", "owner", "posix", "unix")
                           .build())
                   .getRootDirectories(),
@@ -1389,8 +1389,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.unix()
-                          .toBuilder()
+                      Configuration.unix().toBuilder()
                           .setAttributeViews("basic", "owner", "posix", "unix")
                           .build())
                   .getRootDirectories(),
@@ -1405,8 +1404,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.unix()
-                          .toBuilder()
+                      Configuration.unix().toBuilder()
                           .setAttributeViews("basic", "owner", "posix", "unix")
                           .build())
                   .getRootDirectories(),
@@ -1421,8 +1419,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.windows()
-                          .toBuilder()
+                      Configuration.windows().toBuilder()
                           .setAttributeViews("basic", "owner", "dos", "acl", "posix", "user")
                           .build())
                   .getRootDirectories(),
@@ -1437,8 +1434,7 @@ class CASFileCacheTest {
       super(
           Iterables.getFirst(
               Jimfs.newFileSystem(
-                      Configuration.windows()
-                          .toBuilder()
+                      Configuration.windows().toBuilder()
                           .setAttributeViews("basic", "owner", "dos", "acl", "posix", "user")
                           .build())
                   .getRootDirectories(),
