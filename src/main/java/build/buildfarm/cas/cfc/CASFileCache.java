@@ -179,6 +179,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
   private final DigestUtil digestUtil;
   private final ConcurrentMap<String, Entry> storage;
   private final Consumer<Digest> onPut;
+  private final Consumer<Digest> onReadComplete;
   private final Consumer<Iterable<Digest>> onExpire;
   private final Executor accessRecorder;
   private final ExecutorService expireService;
@@ -324,12 +325,13 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         digestUtil,
         expireService,
         accessRecorder,
-        /* storage= */ Maps.newConcurrentMap(),
-        /* directoriesIndexDbName= */ DEFAULT_DIRECTORIES_INDEX_NAME,
-        /* onPut= */ (digest) -> {},
-        /* onExpire= */ (digests) -> {},
-        /* delegate= */ null,
-        /* delegateSkipLoad= */ false);
+        /* storage=*/ Maps.newConcurrentMap(),
+        /* directoriesIndexDbName=*/ DEFAULT_DIRECTORIES_INDEX_NAME,
+        /* onPut=*/ (digest) -> {},
+        /* onReadComplete=*/ (digest) -> {},
+        /* onExpire=*/ (digests) -> {},
+        /* delegate=*/ null,
+        /* delegateSkipLoad=*/ false);
   }
 
   public CASFileCache(
@@ -345,6 +347,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
       ConcurrentMap<String, Entry> storage,
       String directoriesIndexDbName,
       Consumer<Digest> onPut,
+      Consumer<Digest> onReadComplete,
       Consumer<Iterable<Digest>> onExpire,
       @Nullable ContentAddressableStorage delegate,
       boolean delegateSkipLoad) {
@@ -357,6 +360,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     this.accessRecorder = accessRecorder;
     this.storage = storage;
     this.onPut = onPut;
+    this.onReadComplete = onReadComplete;
     this.onExpire = onExpire;
     this.delegate = delegate;
     this.delegateSkipLoad = delegateSkipLoad;
@@ -715,6 +719,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         if (len < 0) {
           in.close();
           blobObserver.onCompleted();
+          onReadComplete.accept(digest);
         }
       }
     }

@@ -43,6 +43,7 @@ class ShardCASFileCache extends CASFileCache {
       ExecutorService expireService,
       Executor accessRecorder,
       Consumer<Digest> onPut,
+      Consumer<Digest> onReadComplete,
       Consumer<Iterable<Digest>> onExpire,
       ContentAddressableStorage delegate,
       boolean delegateSkipLoad) {
@@ -59,6 +60,7 @@ class ShardCASFileCache extends CASFileCache {
         /* storage= */ Maps.newConcurrentMap(),
         DEFAULT_DIRECTORIES_INDEX_NAME,
         onPut,
+        onReadComplete,
         onExpire,
         delegate,
         delegateSkipLoad);
