@@ -5,15 +5,19 @@ module(
     repo_name = "build_buildfarm",
 )
 
+bazel_dep(name = "bazel_skylib", version = "1.5.0")
 bazel_dep(name = "gazelle", version = "0.35.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "grpc", version = "1.48.1.bcr.2", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "protobuf", version = "23.1", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.0.9")
 bazel_dep(name = "rules_go", version = "0.44.2", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_java", version = "7.4.0")
 bazel_dep(name = "rules_jvm_external", version = "5.3")
 bazel_dep(name = "rules_license", version = "0.0.7")
 bazel_dep(name = "rules_oci", version = "1.7.4")
 bazel_dep(name = "rules_pkg", version = "0.10.1")
+bazel_dep(name = "rules_proto", version = "6.0.0-rc2")
 
 # Test dependencies
 bazel_dep(
@@ -25,6 +29,140 @@ bazel_dep(
     name = "buildifier_prebuilt",
     version = "6.4.0",
     dev_dependency = True,
+)
+
+bazel_dep(name = "bazel_remote_apis", version = "66f0212d5cf703db65f7f56a1b54c60d4b41f920")
+archive_override(
+    module_name = "bazel_remote_apis",
+    integrity = "sha256-1qzzTZxQh9IpK0GH1/n32onHKhknIrdOKC12Nu9sUds=",
+    strip_prefix = "remote-apis-66f0212d5cf703db65f7f56a1b54c60d4b41f920",
+    urls = [
+        "https://github.com/bazelbuild/remote-apis/archive/66f0212d5cf703db65f7f56a1b54c60d4b41f920.zip",
+    ],
+)
+
+IO_NETTY_MODULES = [
+    "buffer",
+    "codec",
+    "codec-http",
+    "codec-http2",
+    "codec-socks",
+    "common",
+    "handler",
+    "handler-proxy",
+    "resolver",
+    "transport",
+    "transport-native-epoll",
+    "transport-native-kqueue",
+    "transport-native-unix-common",
+]
+
+IO_GRPC_MODULES = [
+    "api",
+    "auth",
+    "core",
+    "context",
+    "netty",
+    "stub",
+    "protobuf",
+    "testing",
+    "services",
+    "netty-shaded",
+]
+
+COM_AWS_MODULES = [
+    "s3",
+    "secretsmanager",
+]
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+maven.install(
+    artifacts = ["com.amazonaws:aws-java-sdk-%s:1.12.544" % module for module in COM_AWS_MODULES] + [
+                    "com.fasterxml.jackson.core:jackson-databind:2.15.0",
+                    "com.github.ben-manes.caffeine:caffeine:2.9.0",
+                    "com.github.docker-java:docker-java:3.3.3",
+                    "com.github.fppt:jedis-mock:1.0.13",
+                    "com.github.jnr:jffi:1.3.11",
+                    "com.github.jnr:jffi:jar:native:1.3.11",
+                    "com.github.jnr:jnr-constants:0.10.4",
+                    "com.github.jnr:jnr-ffi:2.2.14",
+                    "com.github.jnr:jnr-posix:3.1.17",
+                    "com.github.luben:zstd-jni:1.5.5-7",
+                    "com.github.oshi:oshi-core:6.4.5",
+                    "com.github.pcj:google-options:1.0.0",
+                    "com.github.serceman:jnr-fuse:0.5.7",
+                    "com.google.auth:google-auth-library-credentials:1.19.0",
+                    "com.google.auth:google-auth-library-oauth2-http:1.19.0",
+                    "com.google.code.findbugs:jsr305:3.0.2",
+                    "com.google.code.gson:gson:2.10.1",
+                    "com.google.errorprone:error_prone_annotations:2.22.0",
+                    "com.google.errorprone:error_prone_core:2.22.0",
+                    "com.google.guava:failureaccess:1.0.1",
+                    "com.google.guava:guava:32.1.1-jre",
+                    "com.google.j2objc:j2objc-annotations:2.8",
+                    "com.google.jimfs:jimfs:1.3.0",
+                    "com.google.protobuf:protobuf-java-util:3.19.1",
+                    "com.google.protobuf:protobuf-java:3.19.1",
+                    "com.google.truth:truth:1.1.5",
+                    "com.googlecode.json-simple:json-simple:1.1.1",
+                    "com.jayway.jsonpath:json-path:2.8.0",
+                    "net.jcip:jcip-annotations:1.0",
+                    "org.bouncycastle:bcprov-jdk15on:1.70",
+                    "org.slf4j:slf4j-simple:2.0.9",
+                ] + ["io.netty:netty-%s:4.1.97.Final" % module for module in IO_NETTY_MODULES] +
+                ["io.grpc:grpc-%s:1.62.2" % module for module in IO_GRPC_MODULES] + [
+        "io.prometheus:simpleclient:0.15.0",
+        "io.prometheus:simpleclient_hotspot:0.15.0",
+        "io.prometheus:simpleclient_httpserver:0.15.0",
+        "javax.annotation:javax.annotation-api:1.3.2",
+        "junit:junit:4.13.2",
+        "me.dinowernli:java-grpc-prometheus:0.6.0",
+        "net.javacrumbs.future-converter:future-converter-java8-guava:1.2.0",
+        "org.apache.commons:commons-compress:1.23.0",
+        "org.apache.commons:commons-lang3:3.13.0",
+        "org.apache.commons:commons-pool2:2.11.1",
+        "org.apache.tomcat:annotations-api:6.0.53",
+        "org.bouncycastle:bcprov-jdk15on:1.70",
+        "org.checkerframework:checker-qual:3.38.0",
+        "org.jetbrains:annotations:16.0.2",
+        "org.mockito:mockito-core:5.10.0",
+        "org.openjdk.jmh:jmh-core:1.37",
+        "org.openjdk.jmh:jmh-generator-annprocess:1.37",
+        "org.projectlombok:lombok:1.18.30",
+        "org.redisson:redisson:3.23.4",
+        "org.slf4j:slf4j-simple:2.0.9",
+        "org.threeten:threetenbp:1.6.8",
+        "org.xerial:sqlite-jdbc:3.34.0",
+        "org.yaml:snakeyaml:2.2",
+        "redis.clients:jedis:5.1.2",
+    ] + [
+        # GRPC_JAVA stuff
+        "com.google.api.grpc:proto-google-common-protos:2.22.0",
+    ],
+    excluded_artifacts = [
+        "com.google.protobuf:protobuf-java",
+        "com.google.protobuf:protobuf-javalite",
+    ],
+    generate_compat_repositories = True,
+    # generate_compat_repositories = True,
+    #fail_if_repin_required = True,
+    #lock_file = "//:maven_install.json",
+    #TODO override_targets = IO_GRPC_GRPC_JAVA_OVERRIDE_TARGETS,
+    repositories = [
+        "https://repo.maven.apache.org/maven2",
+    ],
+    strict_visibility = False,  # True breaks aws jars
+)
+use_repo(
+    maven,
+    "com_google_api_grpc_proto_google_common_protos",
+    "com_google_code_findbugs_jsr305",
+    "com_google_errorprone_error_prone_annotations",
+    "com_google_guava_failureaccess",
+    "com_google_guava_guava",
+    "com_google_j2objc_j2objc_annotations",
+    "maven",
+    "org_apache_tomcat_annotations_api",
 )
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
@@ -63,6 +201,37 @@ python.toolchain(
     ignore_root_user_error = True,
     python_version = "3.11",
 )
+
+build_deps = use_extension("//:extensions.bzl", "build_deps")
+use_repo(
+    build_deps,
+    "bazel",
+    "io_grpc_grpc_java",
+    "opentelemetry",
+    "skip_sleep",
+    "tini",
+)
+
+bazel_dep(name = "com_google_googleapis", version = "2a40f63ea714c7f4c6856a5db4d1f3cc7d4c4b18")
+archive_override(
+    module_name = "com_google_googleapis",
+    integrity = "sha256-ZZb7DC2S7M9G53Uu3gALP7UpXctrvnZ/HcGmPXq+A6U=",
+    patch_strip = 1,
+    patches = [
+        "third_party/googleapis_add_bzlmod_support.patch",
+    ],
+    strip_prefix = "googleapis-2a40f63ea714c7f4c6856a5db4d1f3cc7d4c4b18",
+    urls = [
+        "https://github.com/googleapis/googleapis/archive/2a40f63ea714c7f4c6856a5db4d1f3cc7d4c4b18.zip",
+    ],
+)
+
+googleapis_switched_rules = use_extension("@com_google_googleapis//:extensions.bzl", "switched_rules")
+googleapis_switched_rules.use_languages(
+    #grpc = True, # This REALLY wants `@io_grpc_grpc_java` to be defined, but try as I might, it cannot be found.
+    java = True,
+)
+use_repo(googleapis_switched_rules, "com_google_googleapis_imports")
 
 find_rpm = use_extension("@rules_pkg//toolchains/rpm:rpmbuild_configure.bzl", "find_system_rpmbuild_bzlmod")
 use_repo(find_rpm, "rules_pkg_rpmbuild")
