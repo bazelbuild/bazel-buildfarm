@@ -1497,16 +1497,16 @@ public class RedisShardBackplane implements Backplane {
   @SuppressWarnings("ConstantConditions")
   @Override
   public BackplaneStatus backplaneStatus() throws IOException {
-    BackplaneStatus.Builder builder = BackplaneStatus.newBuilder();
     Set<String> executeWorkers = getExecuteWorkers();
     Set<String> storageWorkers = getStorageWorkers();
-    builder.addAllActiveExecuteWorkers(executeWorkers);
-    builder.addAllActiveStorageWorkers(storageWorkers);
-    builder.addAllActiveWorkers(Sets.union(executeWorkers, storageWorkers));
-    builder.setDispatchedSize(client.call(jedis -> state.dispatchedOperations.size(jedis)));
-    builder.setOperationQueue(state.operationQueue.status(client.call(jedis -> jedis)));
-    builder.setPrequeue(state.prequeue.status(client.call(jedis -> jedis)));
-    return builder.build();
+    return BackplaneStatus.newBuilder()
+        .addAllActiveExecuteWorkers(executeWorkers)
+        .addAllActiveStorageWorkers(storageWorkers)
+        .addAllActiveWorkers(Sets.union(executeWorkers, storageWorkers))
+        .setDispatchedSize(client.call(jedis -> state.dispatchedOperations.size(jedis)))
+        .setOperationQueue(state.operationQueue.status(client.call(jedis -> jedis)))
+        .setPrequeue(state.prequeue.status(client.call(jedis -> jedis)))
+        .build();
   }
 
   @SuppressWarnings("ConstantConditions")
