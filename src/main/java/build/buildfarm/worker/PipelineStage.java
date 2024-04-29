@@ -14,6 +14,7 @@
 
 package build.buildfarm.worker;
 
+import static build.buildfarm.worker.Utils.stopwatchToMicroseconds;
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 
@@ -21,6 +22,9 @@ import com.google.common.base.Stopwatch;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
+import lombok.Getter;
+import org.checkerframework.checker.units.qual.Prefix;
+import org.checkerframework.checker.units.qual.s;
 
 public abstract class PipelineStage implements Runnable {
   protected final String name;
@@ -29,7 +33,7 @@ public abstract class PipelineStage implements Runnable {
   protected final PipelineStage error;
 
   protected boolean claimed = false;
-  private volatile boolean closed = false;
+  @Getter private volatile boolean closed = false;
   private Thread tickThread = null;
   private boolean tickCancelledFlag = false;
   private String operationName = null;
@@ -121,7 +125,11 @@ public abstract class PipelineStage implements Runnable {
   protected void iterate() throws InterruptedException {
     OperationContext operationContext;
     OperationContext nextOperationContext = null;
+
+    @SuppressWarnings("units")
+    @s(Prefix.micro)
     long stallUSecs = 0;
+
     Stopwatch stopwatch = Stopwatch.createUnstarted();
     try {
       operationContext = take();
@@ -131,9 +139,12 @@ public abstract class PipelineStage implements Runnable {
       tickThread = Thread.currentThread();
       try {
         nextOperationContext = tick(operationContext);
-        long tickUSecs = stopwatch.elapsed(MICROSECONDS);
+
+        @s(Prefix.micro)
+        long tickUSecs = stopwatchToMicroseconds(stopwatch);
+
         valid = nextOperationContext != null && output.claim(nextOperationContext);
-        stallUSecs = stopwatch.elapsed(MICROSECONDS) - tickUSecs;
+        stallUSecs = stopwatchToMicroseconds(stopwatch) - tickUSecs;
         // ensure that we clear interrupted if we were supposed to cancel tick
         if (Thread.interrupted() && !tickCancelled()) {
           throw new InterruptedException();
@@ -158,8 +169,12 @@ public abstract class PipelineStage implements Runnable {
       release();
     }
     after(operationContext);
-    long usecs = stopwatch.elapsed(MICROSECONDS);
-    complete(operationName, usecs, stallUSecs, nextOperationContext != null);
+
+    @SuppressWarnings("units")
+    @s(Prefix.micro)
+    long uSecs = stopwatch.elapsed(MICROSECONDS);
+
+    complete(operationName, uSecs, stallUSecs, nextOperationContext != null);
     operationName = null;
   }
 
@@ -181,18 +196,26 @@ public abstract class PipelineStage implements Runnable {
     getLogger().log(Level.FINER, format("%s: %s", logIterateId(operationName), message));
   }
 
-  protected void complete(String operationName, long usecs, long stallUSecs, boolean success) {
-    complete(operationName, usecs, stallUSecs, success ? "Success" : "Failed");
+  protected void complete(
+      String operationName,
+      @s(Prefix.micro) long uSecs,
+      @s(Prefix.micro) long stallUSecs,
+      boolean success) {
+    complete(operationName, uSecs, stallUSecs, success ? "Success" : "Failed");
   }
 
-  protected void complete(String operationName, long usecs, long stallUSecs, String status) {
+  protected void complete(
+      String operationName,
+      @s(Prefix.micro) long uSecs,
+      @s(Prefix.micro) long stallUSecs,
+      String status) {
     this.operationName = operationName;
     getLogger()
         .log(
             Level.FINER,
             format(
                 "%s: %g ms (%g ms stalled) %s",
-                logIterateId(operationName), usecs / 1000.0f, stallUSecs / 1000.0f, status));
+                logIterateId(operationName), uSecs / 1000.0f, stallUSecs / 1000.0f, status));
   }
 
   protected OperationContext tick(OperationContext operationContext) throws InterruptedException {
@@ -220,10 +243,6 @@ public abstract class PipelineStage implements Runnable {
 
   public void close() {
     closed = true;
-  }
-
-  public boolean isClosed() {
-    return closed;
   }
 
   protected boolean isClaimed() {
