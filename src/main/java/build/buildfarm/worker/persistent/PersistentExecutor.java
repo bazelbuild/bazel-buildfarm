@@ -14,8 +14,11 @@
 
 package build.buildfarm.worker.persistent;
 
+import static java.lang.String.join;
+
 import build.bazel.remote.execution.v2.ActionResult;
 import build.buildfarm.worker.resources.ResourceLimits;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
@@ -28,6 +31,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
@@ -75,12 +80,27 @@ public class PersistentExecutor {
   }
 
   /**
-   * 1) Parses action inputs into tool inputs and request inputs 2) Makes the WorkerKey 3) Loads the
-   * tool inputs, if needed, into the WorkerKey tool inputs dir 4) Runs the work request on its
-   * Coordinator, passing it the required context 5) Passes output to the resultBuilder
+   * Run some Action on a Persistent Worker.
+   *
+   * <ol>
+   *   <li>Parses action inputs into tool inputs and request inputs
+   *   <li>Makes the WorkerKey
+   *   <li>Loads the tool inputs, if needed, into the WorkerKey tool inputs dir
+   *   <li>Runs the work request on its Coordinator, passing it the required context
+   *   <li>Passes output to the resultBuilder
+   * </ol>
+   *
+   * @param context
+   * @param operationName
+   * @param argsList
+   * @param envVars
+   * @param limits
+   * @param timeout
+   * @param workRootsDir
+   * @param resultBuilder
+   * @return
    */
   public static Code runOnPersistentWorker(
-      String persistentWorkerInitCmd,
       WorkFilesContext context,
       String operationName,
       ImmutableList<String> argsList,
@@ -90,10 +110,10 @@ public class PersistentExecutor {
       Path workRootsDir,
       ActionResult.Builder resultBuilder)
       throws IOException {
-    //// Pull out persistent worker start command from the overall action request
+    // Pull out persistent worker start command from the overall action request
 
     log.log(Level.FINE, "executeCommandOnPersistentWorker[" + operationName + "]");
-
+    String persistentWorkerInitCmd = generatePersistentWorkerCommand(argsList);
     ImmutableList<String> initCmd = parseInitCmd(persistentWorkerInitCmd, argsList);
 
     String executionName = getExecutionName(argsList);
@@ -119,7 +139,7 @@ public class PersistentExecutor {
         ImmutableList.<String>builder().add(PERSISTENT_WORKER_FLAG).build();
     ImmutableList<String> requestArgs = argsList.subList(requestArgsIdx, argsList.size());
 
-    //// Make Key
+    // Make Key
 
     WorkerInputs workerFiles = WorkerInputs.from(context, requestArgs);
 
@@ -141,7 +161,7 @@ public class PersistentExecutor {
 
     coordinator.copyToolInputsIntoWorkerToolRoot(key, workerFiles);
 
-    //// Make request
+    // Make request
 
     // Inputs should be relative paths (if they are from operation root)
     ImmutableList.Builder<Input> reqInputsBuilder = ImmutableList.builder();
@@ -166,8 +186,8 @@ public class PersistentExecutor {
 
     RequestCtx requestCtx = new RequestCtx(request, context, workerFiles, timeout);
 
-    //// Run request
-    //// Required file operations (in/out) are the responsibility of the coordinator
+    // Run request
+    // Required file operations (in/out) are the responsibility of the coordinator
 
     log.log(Level.FINE, "Request with key: " + key);
     WorkResponse response;
@@ -196,7 +216,7 @@ public class PersistentExecutor {
               .build();
     }
 
-    //// Set results
+    // Set results
 
     String responseOut = response.getOutput();
     log.log(Level.FINE, "WorkResponse.output: " + responseOut);
@@ -254,6 +274,28 @@ public class PersistentExecutor {
       throw new IllegalArgumentException("parseInitCmd?![" + initCmd + "]" + "\n" + argsList);
     }
     return initCmd;
+  }
+
+  /**
+   * Generate a PersistentWorker command + arguments.
+   *
+   * <p>Strip out all the @____, --flagfile or -flagfile
+   *
+   * @param args
+   * @return a String of command + args, culminating in `--persistent_worker`, used to start a
+   *     persistent worker daemon.
+   */
+  @VisibleForTesting
+  static String generatePersistentWorkerCommand(List<String> args) {
+    // Strip out the `@...` argfiles.
+    List<String> filteredArgs = new ArrayList<>();
+    for (String a : args) {
+      if (!a.startsWith("@") && !a.startsWith("--flagfile") && !a.startsWith("-flagfile")) {
+        filteredArgs.add(a);
+      }
+    }
+    filteredArgs.add(PERSISTENT_WORKER_FLAG);
+    return join(" ", filteredArgs);
   }
 
   private static String getExecutionName(ImmutableList<String> argsList) {
