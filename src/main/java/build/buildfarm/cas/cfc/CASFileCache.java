@@ -418,6 +418,10 @@ public abstract class CASFileCache implements ContentAddressableStorage {
     return parseFileEntryKey(fileName, size, digestUtil);
   }
 
+  boolean blobExistsOnLocalStorage(String key) {
+    return Files.exists(getPath(key));
+  }
+
   private boolean contains(
       Digest digest,
       boolean isExecutable,
@@ -430,7 +434,7 @@ public abstract class CASFileCache implements ContentAddressableStorage {
         result.mergeFrom(digest).setSizeBytes(entry.size);
       }
       onContains.accept(key);
-      return true;
+      return blobExistsOnLocalStorage(key);
     }
     return false;
   }
