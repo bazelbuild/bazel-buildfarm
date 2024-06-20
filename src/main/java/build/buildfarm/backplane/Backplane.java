@@ -201,7 +201,7 @@ public interface Backplane {
    */
   boolean putOperation(Operation operation, ExecutionStage.Value stage) throws IOException;
 
-  ExecuteEntry deprequeueOperation() throws IOException, InterruptedException;
+  ListenableFuture<ExecuteEntry> deprequeueOperation() throws IOException, InterruptedException;
 
   /**
    * The state of operations is tracked in a series of lists representing the order in which the
@@ -255,18 +255,12 @@ public interface Backplane {
   /** Requeue a dispatched operation */
   void requeueDispatchedOperation(QueueEntry queueEntry) throws IOException;
 
-  void prequeue(ExecuteEntry executeEntry, Operation operation) throws IOException;
+  boolean prequeue(ExecuteEntry executeEntry, Operation operation) throws IOException;
 
-  void queue(QueueEntry queueEntry, Operation operation) throws IOException;
+  boolean queue(QueueEntry queueEntry, Operation operation) throws IOException;
 
   /** Test for whether a request is blacklisted */
   boolean isBlacklisted(RequestMetadata requestMetadata) throws IOException;
-
-  /** Test for whether an operation may be queued */
-  boolean canQueue() throws IOException;
-
-  /** Test for whether an operation may be prequeued */
-  boolean canPrequeue() throws IOException;
 
   BackplaneStatus backplaneStatus() throws IOException;
 
