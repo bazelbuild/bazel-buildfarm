@@ -43,12 +43,12 @@ public class PipelineStageTest {
     }
 
     @Override
-    public void put(OperationContext operationContext) {
+    public void put(ExecutionContext executionContext) {
       throw new UnsupportedOperationException();
     }
 
     @Override
-    OperationContext take() {
+    ExecutionContext take() {
       throw new UnsupportedOperationException();
     }
   }
@@ -58,7 +58,7 @@ public class PipelineStageTest {
     PipelineStage output =
         new StubPipelineStage("singleOutput") {
           @Override
-          public void put(OperationContext operationContext) {
+          public void put(ExecutionContext executionContext) {
             close();
           }
         };
@@ -66,19 +66,19 @@ public class PipelineStageTest {
     PipelineStage error =
         new StubPipelineStage("error") {
           @Override
-          public void put(OperationContext operationContext) {
+          public void put(ExecutionContext executionContext) {
             errorCount.getAndIncrement();
           }
         };
-    OperationContext operationContext =
-        OperationContext.newBuilder().setOperation(Operation.getDefaultInstance()).build();
+    ExecutionContext executionContext =
+        ExecutionContext.newBuilder().setOperation(Operation.getDefaultInstance()).build();
     AtomicInteger count = new AtomicInteger();
     PipelineStage stage =
         new StubPipelineStage("waiter", new StubWorkerContext(), output, error) {
           final Object lock = new Object();
 
           @Override
-          public OperationContext tick(OperationContext operationContext)
+          public ExecutionContext tick(ExecutionContext executionContext)
               throws InterruptedException {
             count.getAndIncrement();
             if (count.get() == 1) {
@@ -86,12 +86,12 @@ public class PipelineStageTest {
                 lock.wait();
               }
             }
-            return operationContext;
+            return executionContext;
           }
 
           @Override
-          OperationContext take() {
-            return operationContext;
+          ExecutionContext take() {
+            return executionContext;
           }
         };
     Thread stageThread = new Thread(stage);

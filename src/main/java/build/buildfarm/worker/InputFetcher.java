@@ -56,14 +56,14 @@ import lombok.extern.java.Log;
 @Log
 public class InputFetcher implements Runnable {
   private final WorkerContext workerContext;
-  private final OperationContext operationContext;
+  private final ExecutionContext executionContext;
   private final InputFetchStage owner;
   private boolean success = false;
 
   InputFetcher(
-      WorkerContext workerContext, OperationContext operationContext, InputFetchStage owner) {
+      WorkerContext workerContext, ExecutionContext executionContext, InputFetchStage owner) {
     this.workerContext = workerContext;
-    this.operationContext = operationContext;
+    this.executionContext = executionContext;
     this.owner = owner;
   }
 
@@ -99,16 +99,16 @@ public class InputFetcher implements Runnable {
   private long runInterruptibly(Stopwatch stopwatch) throws InterruptedException {
     final Thread fetcherThread = Thread.currentThread();
     workerContext.resumePoller(
-        operationContext.poller,
+        executionContext.poller,
         "InputFetcher",
-        operationContext.queueEntry,
+        executionContext.queueEntry,
         QUEUED,
         fetcherThread::interrupt,
         Deadline.after(workerContext.getInputFetchDeadline(), SECONDS));
     try {
       return fetchPolled(stopwatch);
     } finally {
-      operationContext.poller.pause();
+      executionContext.poller.pause();
     }
   }
 
@@ -170,8 +170,8 @@ public class InputFetcher implements Runnable {
 
   private void putOperation() throws InterruptedException {
     Operation operation =
-        operationContext.operation.toBuilder()
-            .setMetadata(Any.pack(operationContext.metadata.build()))
+        executionContext.operation.toBuilder()
+            .setMetadata(Any.pack(executionContext.metadata.build()))
             .build();
 
     boolean operationUpdateSuccess = false;
@@ -192,11 +192,11 @@ public class InputFetcher implements Runnable {
   long fetchPolled(Stopwatch stopwatch) throws InterruptedException {
     Timestamp inputFetchStart = Timestamps.fromMillis(System.currentTimeMillis());
 
-    String operationName = operationContext.queueEntry.getExecuteEntry().getOperationName();
-    log.log(Level.FINER, format("fetching inputs: %s", operationName));
+    String executionName = executionContext.queueEntry.getExecuteEntry().getOperationName();
+    log.log(Level.FINER, format("fetching inputs: %s", executionName));
 
     ExecutedActionMetadata.Builder executedAction =
-        operationContext
+        executionContext
             .metadata
             .getExecuteOperationMetadataBuilder()
             .getPartialExecutionMetadataBuilder()
@@ -207,13 +207,13 @@ public class InputFetcher implements Runnable {
     QueuedOperation queuedOperation;
     Path execDir;
     try {
-      queuedOperation = workerContext.getQueuedOperation(operationContext.queueEntry);
+      queuedOperation = workerContext.getQueuedOperation(executionContext.queueEntry);
       List<String> constraintFailures = validateQueuedOperation(queuedOperation);
       if (!constraintFailures.isEmpty()) {
         log.log(
             Level.SEVERE,
             format("invalid queued operation: %s", String.join(" ", constraintFailures)));
-        owner.error().put(operationContext);
+        owner.error().put(executionContext);
         return 0;
       }
 
@@ -221,7 +221,7 @@ public class InputFetcher implements Runnable {
 
       execDir =
           workerContext.createExecDir(
-              operationName,
+              executionName,
               directoriesIndex,
               queuedOperation.getAction(),
               queuedOperation.getCommand());
@@ -231,7 +231,7 @@ public class InputFetcher implements Runnable {
         execDirEx.toStatus(status);
       } else {
         status.setCode(Code.INTERNAL.getNumber());
-        log.log(Level.SEVERE, format("error creating exec dir for %s", operationName), e);
+        log.log(Level.SEVERE, format("error creating exec dir for %s", executionName), e);
       }
       // populate the inputFetch complete to know how long it took before error
       executedAction.setInputFetchCompletedTimestamp(
@@ -269,7 +269,7 @@ public class InputFetcher implements Runnable {
         } catch (IOException e) {
           log.log(
               Level.SEVERE,
-              format("error deleting exec dir for %s after interrupt", operationName));
+              format("error deleting exec dir for %s after interrupt", executionName));
         }
       }
     }
@@ -278,61 +278,61 @@ public class InputFetcher implements Runnable {
   private void proceedToOutput(Action action, Command command, Path execDir, Tree tree)
       throws InterruptedException {
     // switch poller to disable deadline
-    operationContext.poller.pause();
+    executionContext.poller.pause();
     workerContext.resumePoller(
-        operationContext.poller,
+        executionContext.poller,
         "InputFetcher(claim)",
-        operationContext.queueEntry,
+        executionContext.queueEntry,
         QUEUED,
         () -> {},
         Deadline.after(10, DAYS));
 
-    OperationContext fetchedOperationContext =
-        operationContext.toBuilder()
+    ExecutionContext fetchedExecutionContext =
+        executionContext.toBuilder()
             .setExecDir(execDir)
             .setAction(action)
             .setCommand(command)
             .setTree(tree)
             .build();
-    boolean claimed = owner.output().claim(fetchedOperationContext);
-    operationContext.poller.pause();
+    boolean claimed = owner.output().claim(fetchedExecutionContext);
+    executionContext.poller.pause();
     if (claimed) {
       try {
-        owner.output().put(fetchedOperationContext);
+        owner.output().put(fetchedExecutionContext);
       } catch (InterruptedException e) {
         owner.output().release();
         throw e;
       }
     } else {
-      String operationName = operationContext.queueEntry.getExecuteEntry().getOperationName();
-      log.log(Level.FINER, "InputFetcher: Operation " + operationName + " Failed to claim output");
+      String executionName = executionContext.queueEntry.getExecuteEntry().getOperationName();
+      log.log(Level.FINER, "InputFetcher: Execution " + executionName + " Failed to claim output");
 
-      owner.error().put(operationContext);
+      owner.error().put(executionContext);
     }
   }
 
   @Override
   public void run() {
     long stallUSecs = 0;
-    String operationName = operationContext.queueEntry.getExecuteEntry().getOperationName();
+    String executionName = executionContext.queueEntry.getExecuteEntry().getOperationName();
     Stopwatch stopwatch = Stopwatch.createStarted();
     try {
       stallUSecs = runInterruptibly(stopwatch);
     } catch (InterruptedException e) {
       /* we can be interrupted when the poller fails */
       try {
-        owner.error().put(operationContext);
+        owner.error().put(executionContext);
       } catch (InterruptedException errorEx) {
-        log.log(Level.SEVERE, format("interrupted while erroring %s", operationName), errorEx);
+        log.log(Level.SEVERE, format("interrupted while erroring %s", executionName), errorEx);
       } finally {
         Thread.currentThread().interrupt();
       }
     } catch (Exception e) {
-      log.log(Level.WARNING, format("error while fetching inputs: %s", operationName), e);
+      log.log(Level.WARNING, format("error while fetching inputs: %s", executionName), e);
       try {
-        owner.error().put(operationContext);
+        owner.error().put(executionContext);
       } catch (InterruptedException errorEx) {
-        log.log(Level.SEVERE, format("interrupted while erroring %s", operationName), errorEx);
+        log.log(Level.SEVERE, format("interrupted while erroring %s", executionName), errorEx);
       }
       throw e;
     } finally {
@@ -340,7 +340,7 @@ public class InputFetcher implements Runnable {
       // allow release to occur without interrupted state
       try {
         owner.releaseInputFetcher(
-            operationName, stopwatch.elapsed(MICROSECONDS), stallUSecs, success);
+            executionName, stopwatch.elapsed(MICROSECONDS), stallUSecs, success);
       } finally {
         if (wasInterrupted) {
           Thread.currentThread().interrupt();
@@ -351,19 +351,19 @@ public class InputFetcher implements Runnable {
 
   private void failOperation(ExecutedActionMetadata partialExecutionMetadata, Status status)
       throws InterruptedException {
-    ExecuteEntry executeEntry = operationContext.queueEntry.getExecuteEntry();
+    ExecuteEntry executeEntry = executionContext.queueEntry.getExecuteEntry();
     Operation failedOperation =
         OperationFailer.get(
-            operationContext.operation, executeEntry, partialExecutionMetadata, status);
+            executionContext.operation, executeEntry, partialExecutionMetadata, status);
 
     try {
       workerContext.putOperation(failedOperation);
-      OperationContext newOperationContext =
-          operationContext.toBuilder().setOperation(failedOperation).build();
-      owner.error().put(newOperationContext);
+      ExecutionContext newExecutionContext =
+          executionContext.toBuilder().setOperation(failedOperation).build();
+      owner.error().put(newExecutionContext);
     } catch (Exception e) {
-      String operationName = executeEntry.getOperationName();
-      log.log(Level.SEVERE, format("Cannot report failed operation %s", operationName), e);
+      String executionName = executeEntry.getOperationName();
+      log.log(Level.SEVERE, format("Cannot report failed execution %s", executionName), e);
     }
   }
 }

@@ -79,6 +79,7 @@ import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -456,14 +457,18 @@ class Cat {
     String pageToken = "";
     java.util.Iterator<String> arg = args.iterator();
     String filter = "";
+    String name = "executions";
     if (arg.hasNext()) {
       filter = arg.next();
+    }
+    if (arg.hasNext()) {
+      name = arg.next();
     }
     do {
       ImmutableList.Builder<Operation> operations = new ImmutableList.Builder<>();
       pageToken =
           instance.listOperations(
-              LIST_OPERATIONS_MAXIMUM_PAGE_SIZE, pageToken, filter, operations::add);
+              name, LIST_OPERATIONS_MAXIMUM_PAGE_SIZE, pageToken, filter, operations::add);
       System.out.println(pageToken);
       System.out.println("Page size: " + operations.build().size());
       for (Operation operation : operations.build()) {
@@ -526,8 +531,9 @@ class Cat {
 
   private static void printOperation(Operation operation) {
     System.out.println("Operation: " + operation.getName());
-    System.out.println("Done: " + (operation.getDone() ? "true" : "false"));
-    System.out.println("Metadata:");
+    if (operation.getDone()) {
+      System.out.println("Done");
+    }
     try {
       ExecuteOperationMetadata metadata;
       RequestMetadata requestMetadata;
@@ -552,6 +558,7 @@ class Cat {
         metadata = operation.getMetadata().unpack(ExecuteOperationMetadata.class);
         requestMetadata = null;
       }
+      System.out.println("Metadata:");
       System.out.println("  Stage: " + metadata.getStage());
       System.out.println("  Action: " + DigestUtil.toString(metadata.getActionDigest()));
       System.out.println("  Stdout Stream: " + metadata.getStdoutStreamName());
@@ -560,7 +567,7 @@ class Cat {
         printRequestMetadata(requestMetadata);
       }
     } catch (InvalidProtocolBufferException e) {
-      System.out.println("  UNKNOWN TYPE: " + e.getMessage());
+      // System.out.println("  UNKNOWN TYPE: " + e.getMessage());
     }
     if (operation.getDone()) {
       switch (operation.getResultCase()) {
@@ -584,10 +591,12 @@ class Cat {
 
   private static void watchOperation(Instance instance, String operationName)
       throws InterruptedException {
+    // need to build name
     try {
+      UUID executionId = instance.unbindExecutions(operationName);
       instance
-          .watchOperation(
-              operationName,
+          .watchExecution(
+              executionId,
               (operation) -> {
                 if (operation == null) {
                   throw Status.NOT_FOUND.asRuntimeException();

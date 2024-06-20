@@ -242,8 +242,7 @@ public final class Worker extends LoggingMain {
               backplane));
     }
     GrpcMetrics.handleGrpcMetricIntercepts(serverBuilder, configs.getWorker().getGrpcMetrics());
-    serverBuilder.intercept(new ServerHeadersInterceptor());
-
+    serverBuilder.intercept(new ServerHeadersInterceptor(meta -> {}));
     return serverBuilder.build();
   }
 
@@ -634,7 +633,7 @@ public final class Worker extends LoggingMain {
         new ShardWorkerContext(
             configs.getWorker().getPublicName(),
             Duration.newBuilder().setSeconds(configs.getWorker().getOperationPollPeriod()).build(),
-            backplane::pollOperation,
+            backplane::pollExecution,
             configs.getWorker().getInputFetchStageWidth(),
             configs.getWorker().getExecuteStageWidth(),
             configs.getWorker().getInputFetchDeadline(),

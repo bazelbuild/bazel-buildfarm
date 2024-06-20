@@ -26,6 +26,7 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.protobuf.ProtoUtils;
 import io.grpc.stub.MetadataUtils;
+import java.util.function.Consumer;
 import javax.annotation.Nullable;
 
 /** Utility functions to handle Metadata for remote Grpc calls. */
@@ -64,12 +65,20 @@ public class TracingMetadataUtils {
 
   /** GRPC interceptor to add logging metadata to the GRPC context. */
   public static class ServerHeadersInterceptor implements ServerInterceptor {
+    private final Consumer<RequestMetadata> onMetadata;
+
+    public ServerHeadersInterceptor(Consumer<RequestMetadata> onMetadata) {
+      this.onMetadata = onMetadata;
+    }
+
     @Override
     public <ReqT, RespT> Listener<ReqT> interceptCall(
         ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
       RequestMetadata meta = requestMetadataFromHeaders(headers);
       if (meta == null) {
         meta = RequestMetadata.getDefaultInstance();
+      } else {
+        onMetadata.accept(meta);
       }
       Context ctx = Context.current().withValue(CONTEXT_KEY, meta);
       return Contexts.interceptCall(ctx, call, headers, next);

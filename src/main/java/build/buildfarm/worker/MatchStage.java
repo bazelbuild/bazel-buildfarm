@@ -45,7 +45,7 @@ public class MatchStage extends PipelineStage {
   }
 
   class MatchOperationListener implements MatchListener {
-    private OperationContext operationContext;
+    private ExecutionContext executionContext;
     private final Stopwatch stopwatch;
     private long waitStart;
     private long waitDuration;
@@ -53,8 +53,8 @@ public class MatchStage extends PipelineStage {
     private QueueEntry queueEntry = null;
     private boolean matched = false;
 
-    public MatchOperationListener(OperationContext operationContext, Stopwatch stopwatch) {
-      this.operationContext = operationContext;
+    public MatchOperationListener(ExecutionContext executionContext, Stopwatch stopwatch) {
+      this.executionContext = executionContext;
       this.stopwatch = stopwatch;
       waitDuration = this.stopwatch.elapsed(MICROSECONDS);
     }
@@ -82,14 +82,14 @@ public class MatchStage extends PipelineStage {
         return false;
       }
 
-      operationContext
+      executionContext
           .metadata
           .setQueuedOperationDigest(queueEntry.getQueuedOperationDigest())
           .setRequestMetadata(queueEntry.getExecuteEntry().getRequestMetadata());
 
       Preconditions.checkState(poller == null);
-      operationContext =
-          operationContext.toBuilder()
+      executionContext =
+          executionContext.toBuilder()
               .setQueueEntry(queueEntry)
               .setPoller(workerContext.createPoller("MatchStage", queueEntry, QUEUED))
               .build();
@@ -104,18 +104,18 @@ public class MatchStage extends PipelineStage {
 
     @SuppressWarnings("SameReturnValue")
     private boolean onOperationPolled() throws InterruptedException {
-      String operationName = operationContext.queueEntry.getExecuteEntry().getOperationName();
+      String operationName = executionContext.queueEntry.getExecuteEntry().getOperationName();
       start(operationName);
 
       long matchingAtUSecs = stopwatch.elapsed(MICROSECONDS);
-      OperationContext matchedOperationContext = match(operationContext);
+      ExecutionContext matchedExecutionContext = match(executionContext);
       long matchedInUSecs = stopwatch.elapsed(MICROSECONDS) - matchingAtUSecs;
       complete(operationName, matchedInUSecs, waitDuration, true);
-      matchedOperationContext.poller.pause();
+      matchedExecutionContext.poller.pause();
       try {
-        output.put(matchedOperationContext);
+        output.put(matchedExecutionContext);
       } catch (InterruptedException e) {
-        error.put(matchedOperationContext);
+        error.put(matchedExecutionContext);
         throw e;
       }
       matched = true;
@@ -135,11 +135,11 @@ public class MatchStage extends PipelineStage {
       return;
     }
     Stopwatch stopwatch = Stopwatch.createStarted();
-    OperationContext operationContext = OperationContext.newBuilder().build();
-    if (!output.claim(operationContext)) {
+    ExecutionContext executionContext = ExecutionContext.newBuilder().build();
+    if (!output.claim(executionContext)) {
       return;
     }
-    MatchOperationListener listener = new MatchOperationListener(operationContext, stopwatch);
+    MatchOperationListener listener = new MatchOperationListener(executionContext, stopwatch);
     try {
       start();
       workerContext.match(listener);
@@ -169,11 +169,11 @@ public class MatchStage extends PipelineStage {
     }
   }
 
-  private OperationContext match(OperationContext operationContext) throws InterruptedException {
+  private ExecutionContext match(ExecutionContext executionContext) throws InterruptedException {
     Timestamp workerStartTimestamp = Timestamps.fromMillis(System.currentTimeMillis());
 
-    ExecuteEntry executeEntry = operationContext.queueEntry.getExecuteEntry();
-    operationContext
+    ExecuteEntry executeEntry = executionContext.queueEntry.getExecuteEntry();
+    executionContext
         .metadata
         .getExecuteOperationMetadataBuilder()
         .setActionDigest(executeEntry.getActionDigest())
@@ -189,21 +189,21 @@ public class MatchStage extends PipelineStage {
     Operation operation =
         Operation.newBuilder()
             .setName(executeEntry.getOperationName())
-            .setMetadata(Any.pack(operationContext.metadata.build()))
+            .setMetadata(Any.pack(executionContext.metadata.build()))
             .build();
 
     putOperation(operation);
 
-    return operationContext.toBuilder().setOperation(operation).build();
+    return executionContext.toBuilder().setOperation(operation).build();
   }
 
   @Override
-  public OperationContext take() {
+  public ExecutionContext take() {
     throw new UnsupportedOperationException();
   }
 
   @Override
-  public boolean claim(OperationContext operationContext) {
+  public boolean claim(ExecutionContext executionContext) {
     throw new UnsupportedOperationException();
   }
 
@@ -213,7 +213,7 @@ public class MatchStage extends PipelineStage {
   }
 
   @Override
-  public void put(OperationContext operation) {
+  public void put(ExecutionContext operation) {
     throw new UnsupportedOperationException();
   }
 }
