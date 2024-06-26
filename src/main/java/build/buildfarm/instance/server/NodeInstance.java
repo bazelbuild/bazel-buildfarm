@@ -440,11 +440,11 @@ public abstract class NodeInstance implements Instance {
       return null;
     }
 
-    if ((!blob.isEmpty() && (long) 0 >= blob.size()) || count < 0) {
+    if ((!blob.isEmpty() && 0 >= blob.size()) || count < 0) {
       throw new IndexOutOfBoundsException();
     }
 
-    return blob.getData().substring((int) (long) 0, (int) (Math.min(count, blob.size())));
+    return blob.getData().substring(0, (int) (Math.min(count, blob.size())));
   }
 
   protected ListenableFuture<ByteString> getBlobFuture(
@@ -661,7 +661,7 @@ public abstract class NodeInstance implements Instance {
         expectedHash = digestUtil.computeHash(data).toString();
       }
       contentLength = data.size();
-      inSupplier = () -> data.newInput();
+      inSupplier = data::newInput;
     } else {
       inSupplier = connection::getInputStream;
     }
@@ -1405,7 +1405,7 @@ public abstract class NodeInstance implements Instance {
   }
 
   // this deserves a real async execute, but not now
-  @SuppressWarnings("ConstantConditions")
+  @SuppressWarnings({"ConstantConditions", "PMD.UseDiamondOperator"})
   @Override
   public ListenableFuture<Void> execute(
       Digest actionDigest,
@@ -1577,7 +1577,7 @@ public abstract class NodeInstance implements Instance {
     SettableFuture<T> future = SettableFuture.create();
     Futures.addCallback(
         getBlobFuture(Compressor.Value.IDENTITY, digest, requestMetadata),
-        new FutureCallback<ByteString>() {
+        new FutureCallback<>() {
           @Override
           public void onSuccess(ByteString blob) {
             try {
