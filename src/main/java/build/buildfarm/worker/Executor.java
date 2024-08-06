@@ -34,7 +34,6 @@ import build.buildfarm.common.Write;
 import build.buildfarm.common.Write.NullWrite;
 import build.buildfarm.common.config.ExecutionPolicy;
 import build.buildfarm.common.config.ExecutionWrapper;
-import build.buildfarm.v1test.Tree;
 import build.buildfarm.worker.WorkerContext.IOResource;
 import build.buildfarm.worker.persistent.PersistentExecutor;
 import build.buildfarm.worker.persistent.WorkFilesContext;
@@ -425,21 +424,13 @@ class Executor {
       return ExecutionDebugger.performBeforeExecutionDebug(processBuilder, limits, resultBuilder);
     }
 
-    boolean usePersistentWorker =
-        !limits.persistentWorkerKey.isEmpty() && !limits.persistentWorkerCommand.isEmpty();
-
-    if (usePersistentWorker) {
-      log.fine(
-          "usePersistentWorker; got persistentWorkerCommand of : "
-              + limits.persistentWorkerCommand);
-
-      Tree execTree = operationContext.tree;
+    if (!limits.persistentWorkerKey.isEmpty()) {
+      // RBE Client suggests to run this Action as persistent...
 
       WorkFilesContext filesContext =
-          WorkFilesContext.fromContext(execDir, execTree, operationContext.command);
+          WorkFilesContext.fromContext(execDir, operationContext.tree, operationContext.command);
 
       return PersistentExecutor.runOnPersistentWorker(
-          limits.persistentWorkerCommand,
           filesContext,
           operationName,
           ImmutableList.copyOf(arguments),
@@ -466,7 +457,6 @@ class Executor {
 
       return DockerExecutor.runActionWithDocker(dockerClient, settings, resultBuilder);
     }
-
     long startNanoTime = System.nanoTime();
     Process process;
     try {
