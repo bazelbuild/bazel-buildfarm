@@ -121,12 +121,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.NoSuchFileException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.Stack;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -402,10 +397,7 @@ public abstract class NodeInstance extends InstanceBase {
       UUID uuid,
       RequestMetadata requestMetadata)
       throws EntryLimitException {
-    Preconditions.checkState(
-        digestFunction == DigestFunction.Value.UNKNOWN
-            || digestFunction == digestUtil.getDigestFunction());
-    return contentAddressableStorage.getWrite(compressor, digest, uuid, requestMetadata);
+    return contentAddressableStorage.getWrite(compressor, digest, digestFunction, uuid, requestMetadata);
   }
 
   @Override
@@ -1698,7 +1690,7 @@ public abstract class NodeInstance extends InstanceBase {
 
   protected CacheCapabilities getCacheCapabilities() {
     return CacheCapabilities.newBuilder()
-        .addDigestFunctions(digestUtil.getDigestFunction())
+        .addAllDigestFunctions(DigestUtil.getSupportedDigestFunctions())
         .setActionCacheUpdateCapabilities(
             ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true))
         .setMaxBatchTotalSizeBytes(Size.mbToBytes(4))
